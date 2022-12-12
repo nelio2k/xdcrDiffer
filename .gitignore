@@ -5,3 +5,6 @@ mutationDiff/
 source/
 target/
 xdcrDiffer
+/xdcrDiffer.log
+/go.mod
+/.config.json.swp
