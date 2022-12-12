@@ -13,6 +13,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"xdcrDiffer/observer"
 	"xdcrDiffer/utils"
 
 	"github.com/spf13/pflag"
@@ -250,7 +251,7 @@ func main() {
 	// Launch appropriate modes
 	switch viper.GetBool(base.ObserveModeKey) {
 	case true:
-		panic("Not implemented yet")
+		runObserver()
 	case false:
 		runDiffer()
 	}
@@ -315,5 +316,19 @@ func runDiffer() {
 		difftool.RunMutationDiffer()
 	} else {
 		fmt.Printf("Skipping mutation diff since it has been disabled\n")
+	}
+}
+
+func runObserver() {
+	observer, err := observer.NewObserverTool()
+	if err != nil {
+		fmt.Errorf("Error creating observer: %v", err)
+		os.Exit(1)
+	}
+
+	err = observer.Run()
+	if err != nil {
+		fmt.Errorf("Error running observer: %v", err)
+		os.Exit(1)
 	}
 }
