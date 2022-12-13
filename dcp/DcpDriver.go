@@ -151,7 +151,7 @@ func (d *DcpDriver) Start() error {
 
 	d.logger.Infof("%v started checkpoint manager.\n", d.Name)
 
-	d.initializeDcpClients()
+	d.initializeDcpClientsAndHandlers()
 
 	err = d.startDcpClients()
 	if err != nil {
@@ -244,7 +244,7 @@ func (d *DcpDriver) FilteredCount() int64 {
 	return filtered
 }
 
-func (d *DcpDriver) initializeDcpClients() {
+func (d *DcpDriver) initializeDcpClientsAndHandlers() error {
 	d.stateLock.Lock()
 	defer d.stateLock.Unlock()
 
@@ -260,7 +260,38 @@ func (d *DcpDriver) initializeDcpClients() {
 		d.childWaitGroup.Add(1)
 		dcpClient := NewDcpClient(d, i, vbList, d.childWaitGroup, d.startVbtsDoneChan, d.capabilities, d.collectionIDs, d.colMigrationFilters, d.utils, d.bufferCapacity)
 		d.clients[i] = dcpClient
+
+		handlerDistribution := utils.BalanceLoad(d.numberOfWorkers, len(vbList))
+		for j := 0; j < d.numberOfWorkers; j++ {
+			handlerLowIdx := handlerDistribution[j][0]
+			handlerHighIdx := handlerDistribution[j][1]
+			handlerVBList := make([]uint16, handlerHighIdx-handlerLowIdx)
+			for k := handlerLowIdx; k < handlerHighIdx; k++ {
+				handlerVBList[k-handlerLowIdx] = vbList[k]
+			}
+
+			dcpHandler, err := NewDifferDcpHandler(dcpClient, d.fileDir, j, handlerVBList, d.numberOfBins,
+				d.dcpHandlerChanSize, d.fdPool, d.IncrementDocReceived,
+				d.IncrementSysEventReceived, d.colMigrationFilters, d.utils, d.bufferCapacity)
+			if err != nil {
+				d.logger.Errorf("Error constructing dcp handler. err=%v\n", err)
+				return err
+			}
+
+			err = dcpHandler.Start()
+			if err != nil {
+				d.logger.Errorf("Error starting dcp handler. err=%v\n", err)
+				return err
+			}
+
+			dcpClient.SetHandlerViaWorkerIdx(j, dcpHandler)
+			for k := handlerLowIdx; k < handlerHighIdx; k++ {
+				dcpClient.SetHandlerViaVB(vbList[k], dcpHandler)
+			}
+		}
+
 	}
+	return nil
 }
 
 func (d *DcpDriver) startDcpClients() error {
@@ -350,4 +381,25 @@ func (d *DcpDriver) IncrementDocReceived() {
 
 func (d *DcpDriver) IncrementSysEventReceived() {
 	atomic.AddUint64(&d.totalSysEventReceivedFromDCP, 1)
+}
+
+func StartDcpDriver(logger *xdcrLog.CommonLogger, name, url, bucketName string, ref *metadata.RemoteClusterReference, fileDir, checkpointFileDir, oldCheckpointFileName, newCheckpointFileName string, numberOfDcpClients, numberOfWorkersPerDcpClient, numberOfBins, dcpHandlerChanSize, bucketOpTimeout, maxNumOfGetStatsRetry, getStatsRetryInterval, getStatsMaxBackoff, checkpointInterval uint64, errChan chan error, waitGroup *sync.WaitGroup, completeBySeqno bool, fdPool fdp.FdPoolIface, filter xdcrParts.Filter, capabilities metadata.Capability, collectionIDs []uint32, colMigrationFilters []string, utils xdcrUtils.UtilsIface, bucketBufferCap int) *DcpDriver {
+	waitGroup.Add(1)
+	dcpDriver := NewDcpDriver(logger, name, url, bucketName, ref, fileDir, checkpointFileDir, oldCheckpointFileName,
+		newCheckpointFileName, int(numberOfDcpClients), int(numberOfWorkersPerDcpClient), int(numberOfBins),
+		int(dcpHandlerChanSize), time.Duration(bucketOpTimeout)*time.Second, int(maxNumOfGetStatsRetry),
+		time.Duration(getStatsRetryInterval)*time.Second, time.Duration(getStatsMaxBackoff)*time.Second,
+		int(checkpointInterval), errChan, waitGroup, completeBySeqno, fdPool, filter, capabilities, collectionIDs, colMigrationFilters,
+		utils, bucketBufferCap)
+	// dcp driver startup may take some time. Do it asynchronously
+	go StartDcpDriverAysnc(dcpDriver, errChan, logger)
+	return dcpDriver
+}
+
+func StartDcpDriverAysnc(dcpDriver *DcpDriver, errChan chan error, logger *xdcrLog.CommonLogger) {
+	err := dcpDriver.Start()
+	if err != nil {
+		logger.Errorf("Error starting dcp driver %v. err=%v\n", dcpDriver.Name, err)
+		utils.AddToErrorChan(errChan, err)
+	}
 }

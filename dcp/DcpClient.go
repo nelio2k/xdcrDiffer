@@ -33,8 +33,8 @@ type DcpClient struct {
 	cluster             *gocb.Cluster
 	dcpAgent            *gocbcore.DCPAgent
 	waitGroup           *sync.WaitGroup
-	dcpHandlers         []*DcpHandler
-	vbHandlerMap        map[uint16]*DcpHandler
+	dcpHandlers         []DcpHandler
+	vbHandlerMap        map[uint16]DcpHandler
 	numberClosing       uint32
 	closeStreamsDoneCh  chan bool
 	activeStreams       uint32
@@ -47,7 +47,6 @@ type DcpClient struct {
 	bufferCap           int
 
 	gocbcoreDcpFeed *GocbcoreDCPFeed
-	utils           xdcrUtils.UtilsIface
 
 	kvSSLPortMap xdcrBase.SSLPortMap
 	kvVbMap      map[string][]uint16
@@ -59,8 +58,8 @@ func NewDcpClient(dcpDriver *DcpDriver, i int, vbList []uint16, waitGroup *sync.
 		dcpDriver:           dcpDriver,
 		vbList:              vbList,
 		waitGroup:           waitGroup,
-		dcpHandlers:         make([]*DcpHandler, dcpDriver.numberOfWorkers),
-		vbHandlerMap:        make(map[uint16]*DcpHandler),
+		dcpHandlers:         make([]DcpHandler, dcpDriver.numberOfWorkers),
+		vbHandlerMap:        make(map[uint16]DcpHandler),
 		closeStreamsDoneCh:  make(chan bool),
 		finChan:             make(chan bool),
 		startVbtsDoneChan:   startVbtsDoneChan,
@@ -68,7 +67,6 @@ func NewDcpClient(dcpDriver *DcpDriver, i int, vbList []uint16, waitGroup *sync.
 		capabilities:        capabilities,
 		collectionIds:       collectionIds,
 		colMigrationFilters: colMigrationFilters,
-		utils:               utils,
 		bufferCap:           bufferCap,
 	}
 }
@@ -182,12 +180,6 @@ func (c *DcpClient) initialize() error {
 		return err
 	}
 
-	err = c.initializeDcpHandlers()
-	if err != nil {
-		c.logger.Errorf("Error initializing DCP Handlers %v - %v", c.Name, err)
-		return err
-	}
-
 	return nil
 }
 
@@ -280,37 +272,12 @@ func initializeBucketWithSecurity(dcpDriver *DcpDriver, kvVbMap map[string][]uin
 	return auth, bucketConnStr, nil
 }
 
-func (c *DcpClient) initializeDcpHandlers() error {
-	loadDistribution := utils.BalanceLoad(c.dcpDriver.numberOfWorkers, len(c.vbList))
-	for i := 0; i < c.dcpDriver.numberOfWorkers; i++ {
-		lowIndex := loadDistribution[i][0]
-		highIndex := loadDistribution[i][1]
-		vbList := make([]uint16, highIndex-lowIndex)
-		for j := lowIndex; j < highIndex; j++ {
-			vbList[j-lowIndex] = c.vbList[j]
-		}
+func (c *DcpClient) SetHandlerViaWorkerIdx(workerIdx int, handler DcpHandler) {
+	c.dcpHandlers[workerIdx] = handler
+}
 
-		dcpHandler, err := NewDcpHandler(c, c.dcpDriver.fileDir, i, vbList, c.dcpDriver.numberOfBins,
-			c.dcpDriver.dcpHandlerChanSize, c.dcpDriver.fdPool, c.dcpDriver.IncrementDocReceived,
-			c.dcpDriver.IncrementSysEventReceived, c.colMigrationFilters, c.utils, c.bufferCap)
-		if err != nil {
-			c.logger.Errorf("Error constructing dcp handler. err=%v\n", err)
-			return err
-		}
-
-		err = dcpHandler.Start()
-		if err != nil {
-			c.logger.Errorf("Error starting dcp handler. err=%v\n", err)
-			return err
-		}
-
-		c.dcpHandlers[i] = dcpHandler
-
-		for j := lowIndex; j < highIndex; j++ {
-			c.vbHandlerMap[c.vbList[j]] = dcpHandler
-		}
-	}
-	return nil
+func (c *DcpClient) SetHandlerViaVB(vbno uint16, handler DcpHandler) {
+	c.vbHandlerMap[vbno] = handler
 }
 
 func (c *DcpClient) handleDcpStreams() {

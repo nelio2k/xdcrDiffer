@@ -16,9 +16,7 @@ import (
 
 	xdcrBase "github.com/couchbase/goxdcr/base"
 	xdcrFilter "github.com/couchbase/goxdcr/base/filter"
-	"github.com/couchbase/goxdcr/log"
 	"github.com/couchbase/goxdcr/metadata"
-	xdcrUtils "github.com/couchbase/goxdcr/utils"
 )
 
 type DiffToolStateType int
@@ -109,7 +107,8 @@ func (difftool *XdcrDiffTool) GenerateDataFiles() error {
 		os.Exit(1)
 	}
 
-	difftool.sourceDcpDriver = startDcpDriver(difftool.Logger(), base.SourceClusterName, difftool.legacyOptions.SourceUrl,
+	difftool.Logger().Infof("Starting source dcp clients\n")
+	difftool.sourceDcpDriver = dcp.StartDcpDriver(difftool.Logger(), base.SourceClusterName, difftool.legacyOptions.SourceUrl,
 		difftool.SpecifiedSpec.SourceBucketName,
 		difftool.SelfRef, difftool.legacyOptions.SourceFileDir, difftool.legacyOptions.CheckpointFileDir,
 		difftool.legacyOptions.OldSourceCheckpointFileName, difftool.legacyOptions.NewCheckpointFileName,
@@ -128,7 +127,7 @@ func (difftool *XdcrDiffTool) GenerateDataFiles() error {
 	time.Sleep(delayDurationBetweenSourceAndTarget)
 
 	difftool.Logger().Infof("Starting target dcp clients\n")
-	difftool.targetDcpDriver = startDcpDriver(difftool.Logger(), base.TargetClusterName, difftool.SpecifiedRef.HostName_,
+	difftool.targetDcpDriver = dcp.StartDcpDriver(difftool.Logger(), base.TargetClusterName, difftool.SpecifiedRef.HostName_,
 		difftool.SpecifiedSpec.TargetBucketName, difftool.SpecifiedRef,
 		difftool.legacyOptions.TargetFileDir, difftool.legacyOptions.CheckpointFileDir,
 		difftool.legacyOptions.OldTargetCheckpointFileName, difftool.legacyOptions.NewCheckpointFileName,
@@ -229,27 +228,6 @@ func (difftool *XdcrDiffTool) RunMutationDiffer() {
 	err = mutationDiffer.Run()
 	if err != nil {
 		difftool.Logger().Errorf("Error from RunMutationDiffer = %v\n", err)
-	}
-}
-
-func startDcpDriver(logger *log.CommonLogger, name, url, bucketName string, ref *metadata.RemoteClusterReference, fileDir, checkpointFileDir, oldCheckpointFileName, newCheckpointFileName string, numberOfDcpClients, numberOfWorkersPerDcpClient, numberOfBins, dcpHandlerChanSize, bucketOpTimeout, maxNumOfGetStatsRetry, getStatsRetryInterval, getStatsMaxBackoff, checkpointInterval uint64, errChan chan error, waitGroup *sync.WaitGroup, completeBySeqno bool, fdPool fileDescriptorPool.FdPoolIface, filter xdcrFilter.Filter, capabilities metadata.Capability, collectionIDs []uint32, colMigrationFilters []string, utils xdcrUtils.UtilsIface, bucketBufferCap int) *dcp.DcpDriver {
-	waitGroup.Add(1)
-	dcpDriver := dcp.NewDcpDriver(logger, name, url, bucketName, ref, fileDir, checkpointFileDir, oldCheckpointFileName,
-		newCheckpointFileName, int(numberOfDcpClients), int(numberOfWorkersPerDcpClient), int(numberOfBins),
-		int(dcpHandlerChanSize), time.Duration(bucketOpTimeout)*time.Second, int(maxNumOfGetStatsRetry),
-		time.Duration(getStatsRetryInterval)*time.Second, time.Duration(getStatsMaxBackoff)*time.Second,
-		int(checkpointInterval), errChan, waitGroup, completeBySeqno, fdPool, filter, capabilities, collectionIDs, colMigrationFilters,
-		utils, bucketBufferCap)
-	// dcp driver startup may take some time. Do it asynchronously
-	go startDcpDriverAysnc(dcpDriver, errChan, logger)
-	return dcpDriver
-}
-
-func startDcpDriverAysnc(dcpDriver *dcp.DcpDriver, errChan chan error, logger *log.CommonLogger) {
-	err := dcpDriver.Start()
-	if err != nil {
-		logger.Errorf("Error starting dcp driver %v. err=%v\n", dcpDriver.Name, err)
-		utils.AddToErrorChan(errChan, err)
 	}
 }
 
