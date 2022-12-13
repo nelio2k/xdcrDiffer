@@ -12,8 +12,6 @@ package utils
 import (
 	"bytes"
 	"fmt"
-	xdcrBase "github.com/couchbase/goxdcr/base"
-	xdcrUtils "github.com/couchbase/goxdcr/utils"
 	"hash/crc32"
 	"io/ioutil"
 	"math"
@@ -23,6 +21,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	xdcrBase "github.com/couchbase/goxdcr/base"
+	xdcrUtils "github.com/couchbase/goxdcr/utils"
+
 	"xdcrDiffer/base"
 )
 
