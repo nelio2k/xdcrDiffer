@@ -120,7 +120,7 @@ func (difftool *XdcrDiffTool) GenerateDataFiles() error {
 		difftool.legacyOptions.GetStatsMaxBackoff, difftool.legacyOptions.CheckpointInterval, errChan, waitGroup,
 		difftool.legacyOptions.CompleteBySeqno, fileDescPool, difftool.Filter,
 		difftool.SrcCapabilities, difftool.SrcCollectionIds, difftool.ColFilterOrderedKeys, difftool.Utils,
-		difftool.legacyOptions.BucketBufferCapacity)
+		difftool.legacyOptions.BucketBufferCapacity, dcp.ConstructDifferDcpHandler)
 
 	delayDurationBetweenSourceAndTarget := time.Duration(difftool.legacyOptions.DelayBetweenSourceAndTarget) * time.Second
 	difftool.Logger().Infof("Waiting for %v before starting target dcp clients\n", delayDurationBetweenSourceAndTarget)
@@ -138,7 +138,7 @@ func (difftool *XdcrDiffTool) GenerateDataFiles() error {
 		difftool.legacyOptions.CheckpointInterval, errChan, waitGroup,
 		difftool.legacyOptions.CompleteBySeqno, fileDescPool, difftool.Filter,
 		difftool.TgtCapabilities, difftool.TgtCollectionIds, difftool.ColFilterOrderedKeys, difftool.Utils,
-		difftool.legacyOptions.BucketBufferCapacity)
+		difftool.legacyOptions.BucketBufferCapacity, dcp.ConstructDifferDcpHandler)
 
 	difftool.curState.mtx.Lock()
 	difftool.curState.state = StateDcpStarted
