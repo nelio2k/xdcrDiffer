@@ -106,37 +106,36 @@ func (difftool *XdcrDiffTool) GenerateDataFiles() error {
 	}
 
 	difftool.Logger().Infof("Starting source dcp clients\n")
-	difftool.sourceDcpDriver = dcp.StartDcpDriver(difftool.Logger(), base.SourceClusterName, viper.GetString(base.SourceUrlKey),
-		difftool.SpecifiedSpec.SourceBucketName,
-		difftool.SelfRef, viper.GetString(base.SourceFileDirKey), viper.GetString(base.CheckpointFileDirKey),
+	difftool.sourceDcpDriver = dcp.StartDcpDriver(difftool.Logger(), base.SourceClusterName,
+		viper.GetString(base.SourceUrlKey), difftool.SpecifiedSpec.SourceBucketName, difftool.SelfRef,
+		viper.GetString(base.SourceFileDirKey), viper.GetString(base.CheckpointFileDirKey),
 		viper.GetString(base.OldSourceCheckpointFileNameKey), viper.GetString(base.NewCheckpointFileNameKey),
-		viper.GetUint64(base.NumberOfSourceDcpClientsKey),
-		viper.GetUint64(base.NumberOfWorkersPerSourceDcpClientKey), viper.GetUint64(base.NumberOfBinsKey),
-		viper.GetUint64(base.SourceDcpHandlerChanSizeKey),
+		viper.GetUint64(base.NumberOfSourceDcpClientsKey), viper.GetUint64(base.NumberOfWorkersPerSourceDcpClientKey),
+		viper.GetUint64(base.NumberOfBinsKey), viper.GetUint64(base.SourceDcpHandlerChanSizeKey),
 		viper.GetUint64(base.BucketOpTimeoutKey), viper.GetUint64(base.MaxNumOfGetStatsRetryKey),
-		viper.GetUint64(base.GetStatsRetryIntervalKey),
-		viper.GetUint64(base.GetStatsMaxBackoffKey), viper.GetUint64(base.CheckpointIntervalKey), errChan, waitGroup,
-		viper.GetBool(base.CompleteBySeqnoKey), fileDescPool, difftool.Filter,
-		difftool.SrcCapabilities, difftool.SrcCollectionIds, difftool.ColFilterOrderedKeys, difftool.Utils,
-		viper.GetInt(base.BucketBufferCapacityKey))
+		viper.GetUint64(base.GetStatsRetryIntervalKey), viper.GetUint64(base.GetStatsMaxBackoffKey),
+		viper.GetUint64(base.CheckpointIntervalKey), errChan, waitGroup, viper.GetBool(base.CompleteBySeqnoKey),
+		fileDescPool, difftool.Filter, difftool.SrcCapabilities, difftool.SrcCollectionIds,
+		difftool.ColFilterOrderedKeys, difftool.Utils, viper.GetInt(base.BucketBufferCapacityKey),
+		dcp.ConstructDifferDcpHandler)
 
 	delayDurationBetweenSourceAndTarget := time.Duration(viper.GetUint64(base.DelayBetweenSourceAndTargetKey)) * time.Second
 	difftool.Logger().Infof("Waiting for %v before starting target dcp clients\n", delayDurationBetweenSourceAndTarget)
 	time.Sleep(delayDurationBetweenSourceAndTarget)
 
 	difftool.Logger().Infof("Starting target dcp clients\n")
-	difftool.targetDcpDriver = dcp.StartDcpDriver(difftool.Logger(), base.TargetClusterName, difftool.SpecifiedRef.HostName_,
-		difftool.SpecifiedSpec.TargetBucketName, difftool.SpecifiedRef,
+	difftool.targetDcpDriver = dcp.StartDcpDriver(difftool.Logger(), base.TargetClusterName,
+		difftool.SpecifiedRef.HostName_, difftool.SpecifiedSpec.TargetBucketName, difftool.SpecifiedRef,
 		viper.GetString(base.TargetFileDirKey), viper.GetString(base.CheckpointFileDirKey),
 		viper.GetString(base.OldTargetCheckpointFileNameKey), viper.GetString(base.NewCheckpointFileNameKey),
 		viper.GetUint64(base.NumberOfTargetDcpClientsKey), viper.GetUint64(base.NumberOfWorkersPerTargetDcpClientKey),
 		viper.GetUint64(base.NumberOfBinsKey), viper.GetUint64(base.TargetDcpHandlerChanSizeKey),
 		viper.GetUint64(base.BucketOpTimeoutKey), viper.GetUint64(base.MaxNumOfGetStatsRetryKey),
 		viper.GetUint64(base.GetStatsRetryIntervalKey), viper.GetUint64(base.GetStatsMaxBackoffKey),
-		viper.GetUint64(base.CheckpointIntervalKey), errChan, waitGroup,
-		viper.GetBool(base.CompleteBySeqnoKey), fileDescPool, difftool.Filter,
-		difftool.TgtCapabilities, difftool.TgtCollectionIds, difftool.ColFilterOrderedKeys, difftool.Utils,
-		viper.GetInt(base.BucketBufferCapacityKey))
+		viper.GetUint64(base.CheckpointIntervalKey), errChan, waitGroup, viper.GetBool(base.CompleteBySeqnoKey),
+		fileDescPool, difftool.Filter, difftool.TgtCapabilities, difftool.TgtCollectionIds,
+		difftool.ColFilterOrderedKeys, difftool.Utils, viper.GetInt(base.BucketBufferCapacityKey),
+		dcp.ConstructDifferDcpHandler)
 
 	difftool.curState.mtx.Lock()
 	difftool.curState.state = StateDcpStarted

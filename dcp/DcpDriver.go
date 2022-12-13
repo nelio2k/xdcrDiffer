@@ -64,6 +64,8 @@ type DcpDriver struct {
 	// various counters
 	totalNumReceivedFromDCP      uint64
 	totalSysEventReceivedFromDCP uint64
+
+	handlerConstructor func(dcpClient *DcpClient, d *DcpDriver, j int, handlerVBList []uint16) (*DifferDcpHandler, error)
 }
 
 type VBStateWithLock struct {
@@ -87,7 +89,7 @@ const (
 	DriverStateStopped DriverState = iota
 )
 
-func NewDcpDriver(logger *xdcrLog.CommonLogger, name, url, bucketName string, ref *metadata.RemoteClusterReference, fileDir, checkpointFileDir, oldCheckpointFileName, newCheckpointFileName string, numberOfClients, numberOfWorkers, numberOfBins, dcpHandlerChanSize int, bucketOpTimeout time.Duration, maxNumOfGetStatsRetry int, getStatsRetryInterval, getStatsMaxBackoff time.Duration, checkpointInterval int, errChan chan error, waitGroup *sync.WaitGroup, completeBySeqno bool, fdPool fdp.FdPoolIface, filter xdcrParts.Filter, capabilities metadata.Capability, collectionIds []uint32, colMigrationFilters []string, utils xdcrUtils.UtilsIface, bufferCap int) *DcpDriver {
+func NewDcpDriver(logger *xdcrLog.CommonLogger, name, url, bucketName string, ref *metadata.RemoteClusterReference, fileDir, checkpointFileDir, oldCheckpointFileName, newCheckpointFileName string, numberOfClients, numberOfWorkers, numberOfBins, dcpHandlerChanSize int, bucketOpTimeout time.Duration, maxNumOfGetStatsRetry int, getStatsRetryInterval, getStatsMaxBackoff time.Duration, checkpointInterval int, errChan chan error, waitGroup *sync.WaitGroup, completeBySeqno bool, fdPool fdp.FdPoolIface, filter xdcrParts.Filter, capabilities metadata.Capability, collectionIds []uint32, colMigrationFilters []string, utils xdcrUtils.UtilsIface, bufferCap int, handlerConstructor func(dcpClient *DcpClient, d *DcpDriver, j int, handlerVBList []uint16) (*DifferDcpHandler, error)) *DcpDriver {
 	dcpDriver := &DcpDriver{
 		Name:                name,
 		url:                 url,
@@ -115,6 +117,7 @@ func NewDcpDriver(logger *xdcrLog.CommonLogger, name, url, bucketName string, re
 		colMigrationFilters: colMigrationFilters,
 		utils:               utils,
 		bufferCapacity:      bufferCap,
+		handlerConstructor:  handlerConstructor,
 	}
 
 	var vbno uint16
@@ -151,7 +154,11 @@ func (d *DcpDriver) Start() error {
 
 	d.logger.Infof("%v started checkpoint manager.\n", d.Name)
 
-	d.initializeDcpClientsAndHandlers()
+	err = d.initializeDcpClientsAndHandlers()
+	if err != nil {
+		d.logger.Errorf("%v error initializing DCP Client and handlers\n")
+		return err
+	}
 
 	err = d.startDcpClients()
 	if err != nil {
@@ -270,11 +277,8 @@ func (d *DcpDriver) initializeDcpClientsAndHandlers() error {
 				handlerVBList[k-handlerLowIdx] = vbList[k]
 			}
 
-			dcpHandler, err := NewDifferDcpHandler(dcpClient, d.fileDir, j, handlerVBList, d.numberOfBins,
-				d.dcpHandlerChanSize, d.fdPool, d.IncrementDocReceived,
-				d.IncrementSysEventReceived, d.colMigrationFilters, d.utils, d.bufferCapacity)
+			dcpHandler, err := d.handlerConstructor(dcpClient, d, j, handlerVBList)
 			if err != nil {
-				d.logger.Errorf("Error constructing dcp handler. err=%v\n", err)
 				return err
 			}
 
@@ -383,14 +387,14 @@ func (d *DcpDriver) IncrementSysEventReceived() {
 	atomic.AddUint64(&d.totalSysEventReceivedFromDCP, 1)
 }
 
-func StartDcpDriver(logger *xdcrLog.CommonLogger, name, url, bucketName string, ref *metadata.RemoteClusterReference, fileDir, checkpointFileDir, oldCheckpointFileName, newCheckpointFileName string, numberOfDcpClients, numberOfWorkersPerDcpClient, numberOfBins, dcpHandlerChanSize, bucketOpTimeout, maxNumOfGetStatsRetry, getStatsRetryInterval, getStatsMaxBackoff, checkpointInterval uint64, errChan chan error, waitGroup *sync.WaitGroup, completeBySeqno bool, fdPool fdp.FdPoolIface, filter xdcrParts.Filter, capabilities metadata.Capability, collectionIDs []uint32, colMigrationFilters []string, utils xdcrUtils.UtilsIface, bucketBufferCap int) *DcpDriver {
+func StartDcpDriver(logger *xdcrLog.CommonLogger, name, url, bucketName string, ref *metadata.RemoteClusterReference, fileDir, checkpointFileDir, oldCheckpointFileName, newCheckpointFileName string, numberOfDcpClients, numberOfWorkersPerDcpClient, numberOfBins, dcpHandlerChanSize, bucketOpTimeout, maxNumOfGetStatsRetry, getStatsRetryInterval, getStatsMaxBackoff, checkpointInterval uint64, errChan chan error, waitGroup *sync.WaitGroup, completeBySeqno bool, fdPool fdp.FdPoolIface, filter xdcrParts.Filter, capabilities metadata.Capability, collectionIDs []uint32, colMigrationFilters []string, utils xdcrUtils.UtilsIface, bucketBufferCap int, handlerConstructor func(dcpClient *DcpClient, d *DcpDriver, j int, handlerVBList []uint16) (*DifferDcpHandler, error)) *DcpDriver {
 	waitGroup.Add(1)
 	dcpDriver := NewDcpDriver(logger, name, url, bucketName, ref, fileDir, checkpointFileDir, oldCheckpointFileName,
 		newCheckpointFileName, int(numberOfDcpClients), int(numberOfWorkersPerDcpClient), int(numberOfBins),
 		int(dcpHandlerChanSize), time.Duration(bucketOpTimeout)*time.Second, int(maxNumOfGetStatsRetry),
 		time.Duration(getStatsRetryInterval)*time.Second, time.Duration(getStatsMaxBackoff)*time.Second,
 		int(checkpointInterval), errChan, waitGroup, completeBySeqno, fdPool, filter, capabilities, collectionIDs, colMigrationFilters,
-		utils, bucketBufferCap)
+		utils, bucketBufferCap, handlerConstructor)
 	// dcp driver startup may take some time. Do it asynchronously
 	go StartDcpDriverAysnc(dcpDriver, errChan, logger)
 	return dcpDriver
@@ -402,4 +406,20 @@ func StartDcpDriverAysnc(dcpDriver *DcpDriver, errChan chan error, logger *xdcrL
 		logger.Errorf("Error starting dcp driver %v. err=%v\n", dcpDriver.Name, err)
 		utils.AddToErrorChan(errChan, err)
 	}
+}
+
+func ConstructDifferDcpHandler(dcpClient *DcpClient, d *DcpDriver, j int, handlerVBList []uint16) (*DifferDcpHandler, error) {
+	dcpHandler, err := NewDifferDcpHandler(dcpClient, d.fileDir, j, handlerVBList, d.numberOfBins,
+		d.dcpHandlerChanSize, d.fdPool, d.IncrementDocReceived,
+		d.IncrementSysEventReceived, d.colMigrationFilters, d.utils, d.bufferCapacity)
+	if err != nil {
+		d.logger.Errorf("Error constructing dcp handler. err=%v\n", err)
+		return nil, err
+	}
+	return dcpHandler, err
+}
+
+func ConstructObserverDcpHandler(dcpClient *DcpClient, d *DcpDriver, j int, handlerVBList []uint16) (*DifferDcpHandler, error) {
+
+	return nil, fmt.Errorf("Not implemented yet")
 }

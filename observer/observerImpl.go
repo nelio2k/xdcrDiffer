@@ -49,7 +49,7 @@ func (o *ObserverImpl) Run() error {
 		viper.GetUint64(base.GetStatsMaxBackoffKey), viper.GetUint64(base.CheckpointIntervalKey), errChan, waitGroup,
 		false /*completeBySeqno*/, fileDescPool, o.Filter,
 		o.SrcCapabilities, o.SrcCollectionIds, o.ColFilterOrderedKeys, o.Utils,
-		viper.GetInt(base.BucketBufferCapacityKey))
+		viper.GetInt(base.BucketBufferCapacityKey), dcp.ConstructObserverDcpHandler)
 
 	o.targetDcpDriver = dcp.StartDcpDriver(o.Logger(), base.TargetClusterName, o.SpecifiedRef.HostName_,
 		o.SpecifiedSpec.TargetBucketName, o.SpecifiedRef,
@@ -62,7 +62,7 @@ func (o *ObserverImpl) Run() error {
 		viper.GetUint64(base.CheckpointIntervalKey), errChan, waitGroup,
 		viper.GetBool(base.CompleteBySeqnoKey), fileDescPool, o.Filter,
 		o.TgtCapabilities, o.TgtCollectionIds, o.ColFilterOrderedKeys, o.Utils,
-		viper.GetInt(base.BucketBufferCapacityKey))
+		viper.GetInt(base.BucketBufferCapacityKey), dcp.ConstructObserverDcpHandler)
 
 	fmt.Printf("NEIL DEBUG not implemented yet\n")
 	return fmt.Errorf("Not implemented yet")
