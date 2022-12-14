@@ -10,16 +10,18 @@ import (
 	"xdcrDiffer/fileDescriptorPool"
 )
 
-type ObserverImpl struct {
+// ObserverEphImpl stands for Observer Ephemeral Implementation
+// This observer will keep all things in memory for observation
+type ObserverEphImpl struct {
 	*differCommon.XdcrDependencies
 
 	sourceDcpDriver *dcp.DcpDriver
 	targetDcpDriver *dcp.DcpDriver
 }
 
-func NewObserverTool() (*ObserverImpl, error) {
+func NewObserverTool() (*ObserverEphImpl, error) {
 	var err error
-	observer := &ObserverImpl{}
+	observer := &ObserverEphImpl{}
 	observer.XdcrDependencies, err = differCommon.NewXdcrDependencies()
 	if err != nil {
 		return nil, err
@@ -28,7 +30,7 @@ func NewObserverTool() (*ObserverImpl, error) {
 	return observer, nil
 }
 
-func (o *ObserverImpl) Run() error {
+func (o *ObserverEphImpl) Run() error {
 	var fileDescPool fileDescriptorPool.FdPoolIface
 	if viper.GetInt(base.NumberOfFileDescKey) > 0 {
 		fileDescPool = fileDescriptorPool.NewFileDescriptorPool(viper.GetInt(base.NumberOfFileDescKey))

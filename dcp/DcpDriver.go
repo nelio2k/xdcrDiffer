@@ -409,9 +409,11 @@ func StartDcpDriverAysnc(dcpDriver *DcpDriver, errChan chan error, logger *xdcrL
 }
 
 func ConstructDifferDcpHandler(dcpClient *DcpClient, d *DcpDriver, j int, handlerVBList []uint16) (*DifferDcpHandler, error) {
-	dcpHandler, err := NewDifferDcpHandler(dcpClient, d.fileDir, j, handlerVBList, d.numberOfBins,
-		d.dcpHandlerChanSize, d.fdPool, d.IncrementDocReceived,
-		d.IncrementSysEventReceived, d.colMigrationFilters, d.utils, d.bufferCapacity)
+	common, err := constructDcpHandlerCommon(dcpClient, d, handlerVBList)
+	if err != nil {
+		return nil, err
+	}
+	dcpHandler, err := NewDifferDcpHandler(d.fileDir, j, d.numberOfBins, d.fdPool, d.bufferCapacity, common)
 	if err != nil {
 		d.logger.Errorf("Error constructing dcp handler. err=%v\n", err)
 		return nil, err
@@ -419,7 +421,21 @@ func ConstructDifferDcpHandler(dcpClient *DcpClient, d *DcpDriver, j int, handle
 	return dcpHandler, err
 }
 
-func ConstructObserverDcpHandler(dcpClient *DcpClient, d *DcpDriver, j int, handlerVBList []uint16) (*DifferDcpHandler, error) {
+func constructDcpHandlerCommon(dcpClient *DcpClient, d *DcpDriver, handlerVBList []uint16) (*DcpHandlerCommon, error) {
+	common, err := NewDcpHandlerCommon(dcpClient, handlerVBList, d.dcpHandlerChanSize, d.IncrementDocReceived,
+		d.IncrementSysEventReceived, d.colMigrationFilters, d.utils)
+	if err != nil {
+		return nil, err
+	}
+	return common, nil
+}
+
+func ConstructObserverDcpHandler(dcpClient *DcpClient, d *DcpDriver, j int, handlerVBList []uint16) (*ObserverEphDcpHandler, error) {
+	_, err := constructDcpHandlerCommon(dcpClient, d, handlerVBList)
+	if err != nil {
+		return nil, err
+	}
 
 	return nil, fmt.Errorf("Not implemented yet")
+	//return NewObserverEphDcpHandler(common)
 }
