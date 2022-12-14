@@ -11,6 +11,7 @@ import (
 	xdcrLog "github.com/couchbase/goxdcr/log"
 	xdcrUtils "github.com/couchbase/goxdcr/utils"
 	"strings"
+	"sync"
 	"xdcrDiffer/base"
 )
 
@@ -27,6 +28,9 @@ type DcpHandlerCommon struct {
 	isSource                bool
 	filter                  xdcrParts.Filter
 	logger                  *xdcrLog.CommonLogger
+	finChan                 chan bool
+	waitGrp                 sync.WaitGroup
+	mutationProcessor       func(mut *Mutation)
 }
 
 func NewDcpHandlerCommon(dcpClient *DcpClient, vbList []uint16, dataChanSize int, incReceivedCounter func(),
@@ -43,12 +47,17 @@ func NewDcpHandlerCommon(dcpClient *DcpClient, vbList []uint16, dataChanSize int
 		isSource:              strings.Contains(dcpClient.Name, base.SourceClusterName),
 		filter:                dcpClient.dcpDriver.filter,
 		logger:                dcpClient.logger,
+		finChan:               make(chan bool),
 	}
 
 	if err := common.compileMigrCollectionFiltersIfNeeded(); err != nil {
 		return nil, err
 	}
 	return common, nil
+}
+
+func (d *DcpHandlerCommon) SetMutationProcessor(processor func(mutation *Mutation)) {
+	d.mutationProcessor = processor
 }
 
 func (d *DcpHandlerCommon) compileMigrCollectionFiltersIfNeeded() error {
@@ -125,6 +134,46 @@ func (d *DcpHandlerCommon) preProcessMutation(mut *Mutation) bool {
 		mut.ColFiltersMatched = filterIdsMatched
 	}
 	return false
+}
+
+func (d *DcpHandlerCommon) Start() error {
+	if d.mutationProcessor == nil {
+		return fmt.Errorf("Mutation processor not set")
+	}
+
+	d.waitGrp.Add(1)
+	go d.processData()
+	return nil
+}
+
+func (d *DcpHandlerCommon) Stop() {
+	close(d.finChan)
+}
+
+func (d *DcpHandlerCommon) processData() {
+	defer d.waitGrp.Done()
+
+	for {
+		select {
+		case <-d.finChan:
+			goto done
+		case mut := <-d.dataChan:
+			skipProcessing := d.preProcessMutation(mut)
+			if skipProcessing {
+				continue
+			}
+			d.mutationProcessor(mut)
+		}
+	}
+done:
+}
+
+func (d *DcpHandlerCommon) writeToDataChan(mut *Mutation) {
+	select {
+	case d.dataChan <- mut:
+	// provides an alternative exit path when dh stops
+	case <-d.finChan:
+	}
 }
 
 type Mutation struct {

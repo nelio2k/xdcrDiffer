@@ -15,7 +15,6 @@ import (
 	"github.com/couchbase/gomemcached"
 	xdcrLog "github.com/couchbase/goxdcr/log"
 	"os"
-	"sync"
 	"xdcrDiffer/base"
 	fdp "xdcrDiffer/fileDescriptorPool"
 	"xdcrDiffer/utils"
@@ -27,8 +26,6 @@ type DifferDcpHandler struct {
 	fileDir      string
 	index        int
 	numberOfBins int
-	waitGrp      sync.WaitGroup
-	finChan      chan bool
 	bucketMap    map[uint16]map[int]*Bucket
 	fdPool       fdp.FdPoolIface
 	bufferCap    int
@@ -40,7 +37,6 @@ func NewDifferDcpHandler(fileDir string, index, numberOfBins int, fdPool fdp.FdP
 		fileDir:          fileDir,
 		index:            index,
 		numberOfBins:     numberOfBins,
-		finChan:          make(chan bool),
 		bucketMap:        make(map[uint16]map[int]*Bucket),
 		fdPool:           fdPool,
 		bufferCap:        bufferCap,
@@ -111,17 +107,12 @@ func (dh *DifferDcpHandler) Start() error {
 		return err
 	}
 
-	dh.waitGrp.Add(1)
-	go dh.processData()
-
-	return nil
+	dh.DcpHandlerCommon.SetMutationProcessor(dh.processMutation)
+	return dh.DcpHandlerCommon.Start()
 }
 
 func (dh *DifferDcpHandler) Stop() {
-	close(dh.finChan)
-	// this sometimes does not return after a long time
-	//dh.waitGrp.Wait()
-
+	dh.DcpHandlerCommon.Stop()
 	dh.cleanup()
 }
 
@@ -160,28 +151,7 @@ func (dh *DifferDcpHandler) cleanup() {
 	}
 }
 
-func (dh *DifferDcpHandler) processData() {
-	dh.logger.Debugf("%v DifferDcpHandler %v processData starts..........\n", dh.dcpClient.Name, dh.index)
-	defer dh.logger.Debugf("%v DifferDcpHandler %v processData exits..........\n", dh.dcpClient.Name, dh.index)
-	defer dh.waitGrp.Done()
-
-	for {
-		select {
-		case <-dh.finChan:
-			goto done
-		case mut := <-dh.dataChan:
-			dh.processMutation(mut)
-		}
-	}
-done:
-}
-
 func (dh *DifferDcpHandler) processMutation(mut *Mutation) {
-	skipProcessing := dh.preProcessMutation(mut)
-	if skipProcessing {
-		return
-	}
-
 	vbno := mut.Vbno
 	index := utils.GetBucketIndexFromKey(mut.Key, dh.numberOfBins)
 	innerMap := dh.bucketMap[vbno]
@@ -194,14 +164,6 @@ func (dh *DifferDcpHandler) processMutation(mut *Mutation) {
 	}
 
 	bucket.write(mut.Serialize())
-}
-
-func (dh *DifferDcpHandler) writeToDataChan(mut *Mutation) {
-	select {
-	case dh.dataChan <- mut:
-	// provides an alternative exit path when dh stops
-	case <-dh.finChan:
-	}
 }
 
 type Bucket struct {
