@@ -10,231 +10,44 @@
 package dcp
 
 import (
-	"crypto/sha512"
-	"encoding/binary"
 	"fmt"
 	gocbcore "github.com/couchbase/gocbcore/v9"
 	"github.com/couchbase/gomemcached"
-	mcc "github.com/couchbase/gomemcached/client"
-	xdcrBase "github.com/couchbase/goxdcr/base"
-	xdcrParts "github.com/couchbase/goxdcr/base/filter"
 	xdcrLog "github.com/couchbase/goxdcr/log"
-	xdcrUtils "github.com/couchbase/goxdcr/utils"
 	"os"
-	"strings"
 	"sync"
 	"xdcrDiffer/base"
 	fdp "xdcrDiffer/fileDescriptorPool"
 	"xdcrDiffer/utils"
 )
 
-// implements StreamObserver
 type DifferDcpHandler struct {
-	dcpClient               *DcpClient
-	fileDir                 string
-	index                   int
-	vbList                  []uint16
-	numberOfBins            int
-	dataChan                chan *Mutation
-	waitGrp                 sync.WaitGroup
-	finChan                 chan bool
-	bucketMap               map[uint16]map[int]*Bucket
-	fdPool                  fdp.FdPoolIface
-	logger                  *xdcrLog.CommonLogger
-	filter                  xdcrParts.Filter
-	incrementCounter        func()
-	incrementSysCounter     func()
-	colMigrationFilters     []string
-	colMigrationFiltersOn   bool // shortcut to avoid len() check
-	colMigrationFiltersImpl []xdcrParts.Filter
-	isSource                bool
-	utils                   xdcrUtils.UtilsIface
-	bufferCap               int
+	*DcpHandlerCommon
+
+	fileDir      string
+	index        int
+	numberOfBins int
+	waitGrp      sync.WaitGroup
+	finChan      chan bool
+	bucketMap    map[uint16]map[int]*Bucket
+	fdPool       fdp.FdPoolIface
+	bufferCap    int
 }
 
-func NewDifferDcpHandler(dcpClient *DcpClient, fileDir string, index int, vbList []uint16, numberOfBins, dataChanSize int, fdPool fdp.FdPoolIface, incReceivedCounter, incSysEvtReceived func(), colMigrationFilters []string, utils xdcrUtils.UtilsIface, bufferCap int) (*DifferDcpHandler, error) {
-	if len(vbList) == 0 {
-		return nil, fmt.Errorf("vbList is empty for handler %v", index)
-	}
+func NewDifferDcpHandler(fileDir string, index, numberOfBins int, fdPool fdp.FdPoolIface, bufferCap int, common *DcpHandlerCommon) (*DifferDcpHandler, error) {
 	return &DifferDcpHandler{
-		dcpClient:             dcpClient,
-		fileDir:               fileDir,
-		index:                 index,
-		vbList:                vbList,
-		numberOfBins:          numberOfBins,
-		dataChan:              make(chan *Mutation, dataChanSize),
-		finChan:               make(chan bool),
-		bucketMap:             make(map[uint16]map[int]*Bucket),
-		fdPool:                fdPool,
-		logger:                dcpClient.logger,
-		filter:                dcpClient.dcpDriver.filter,
-		incrementCounter:      incReceivedCounter,
-		incrementSysCounter:   incSysEvtReceived,
-		colMigrationFilters:   colMigrationFilters,
-		colMigrationFiltersOn: len(colMigrationFilters) > 0,
-		utils:                 utils,
-		isSource:              strings.Contains(dcpClient.Name, base.SourceClusterName),
-		bufferCap:             bufferCap,
+		DcpHandlerCommon: common,
+		fileDir:          fileDir,
+		index:            index,
+		numberOfBins:     numberOfBins,
+		finChan:          make(chan bool),
+		bucketMap:        make(map[uint16]map[int]*Bucket),
+		fdPool:           fdPool,
+		bufferCap:        bufferCap,
 	}, nil
 }
 
-func (dh *DifferDcpHandler) Start() error {
-	err := dh.initialize()
-	if err != nil {
-		return err
-	}
-
-	dh.waitGrp.Add(1)
-	go dh.processData()
-
-	return nil
-}
-
-func (dh *DifferDcpHandler) Stop() {
-	close(dh.finChan)
-	// this sometimes does not return after a long time
-	//dh.waitGrp.Wait()
-
-	dh.cleanup()
-}
-
-func (d *DifferDcpHandler) compileMigrCollectionFiltersIfNeeded() error {
-	if len(d.colMigrationFilters) == 0 {
-		return nil
-	}
-
-	for i, filterStr := range d.colMigrationFilters {
-		filter, err := xdcrParts.NewFilter(fmt.Sprintf("%d", i), filterStr, d.utils, true)
-		if err != nil {
-			return fmt.Errorf("compiling %v resulted in: %v", filterStr, err)
-		}
-		d.colMigrationFiltersImpl = append(d.colMigrationFiltersImpl, filter)
-	}
-	return nil
-}
-
-func (dh *DifferDcpHandler) initialize() error {
-	for _, vbno := range dh.vbList {
-		innerMap := make(map[int]*Bucket)
-		dh.bucketMap[vbno] = innerMap
-		for i := 0; i < dh.numberOfBins; i++ {
-			bucket, err := NewBucket(dh.fileDir, vbno, i, dh.fdPool, dh.logger, dh.bufferCap)
-			if err != nil {
-				return err
-			}
-			innerMap[i] = bucket
-		}
-	}
-
-	if err := dh.compileMigrCollectionFiltersIfNeeded(); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (dh *DifferDcpHandler) cleanup() {
-	for _, vbno := range dh.vbList {
-		innerMap := dh.bucketMap[vbno]
-		if innerMap == nil {
-			dh.logger.Warnf("Cannot find innerMap for Vbno %v at cleanup\n", vbno)
-			continue
-		}
-		for i := 0; i < dh.numberOfBins; i++ {
-			bucket := innerMap[i]
-			if bucket == nil {
-				dh.logger.Warnf("Cannot find bucket for Vbno %v and index %v at cleanup\n", vbno, i)
-				continue
-			}
-			//fmt.Printf("%v DifferDcpHandler closing bucket %v\n", dh.dcpClient.Name, i)
-			bucket.close()
-		}
-	}
-}
-
-func (dh *DifferDcpHandler) processData() {
-	dh.logger.Debugf("%v DifferDcpHandler %v processData starts..........\n", dh.dcpClient.Name, dh.index)
-	defer dh.logger.Debugf("%v DifferDcpHandler %v processData exits..........\n", dh.dcpClient.Name, dh.index)
-	defer dh.waitGrp.Done()
-
-	for {
-		select {
-		case <-dh.finChan:
-			goto done
-		case mut := <-dh.dataChan:
-			dh.processMutation(mut)
-		}
-	}
-done:
-}
-
-func (dh *DifferDcpHandler) processMutation(mut *Mutation) {
-	var matched bool
-	var replicationFilterResult base.FilterResultType
-
-	replicationFilterResult = dh.replicationFilter(mut, matched, replicationFilterResult)
-	valid := dh.dcpClient.dcpDriver.checkpointManager.HandleMutationEvent(mut, replicationFilterResult)
-	if !valid {
-		// if mutation is out of range, ignore it
-		return
-	}
-
-	dh.incrementCounter()
-
-	// Ignore system events - we only care about actual data
-	if mut.IsSystemEvent() {
-		dh.incrementSysCounter()
-		return
-	}
-
-	var filterIdsMatched []uint8
-	if dh.colMigrationFiltersOn && dh.isSource {
-		filterIdsMatched = dh.checkColMigrationFilters(mut)
-		if len(filterIdsMatched) == 0 {
-			return
-		}
-	}
-
-	vbno := mut.Vbno
-	index := utils.GetBucketIndexFromKey(mut.Key, dh.numberOfBins)
-	innerMap := dh.bucketMap[vbno]
-	if innerMap == nil {
-		panic(fmt.Sprintf("cannot find bucketMap for Vbno %v", vbno))
-	}
-	bucket := innerMap[index]
-	if bucket == nil {
-		panic(fmt.Sprintf("cannot find bucket for index %v", index))
-	}
-
-	if dh.colMigrationFiltersOn && len(filterIdsMatched) > 0 {
-		mut.ColFiltersMatched = filterIdsMatched
-	}
-	bucket.write(mut.Serialize())
-}
-
-func (dh *DifferDcpHandler) replicationFilter(mut *Mutation, matched bool, filterResult base.FilterResultType) base.FilterResultType {
-	var err error
-	var errStr string
-	if dh.filter != nil && mut.IsMutation() {
-		matched, err, errStr, _ = dh.filter.FilterUprEvent(mut.ToUprEvent())
-		if !matched {
-			filterResult = base.Filtered
-		}
-		if err != nil {
-			filterResult = base.UnableToFilter
-			dh.logger.Warnf("Err %v - (%v) when filtering mutation %v", err, errStr, mut)
-		}
-	}
-	return filterResult
-}
-
-func (dh *DifferDcpHandler) writeToDataChan(mut *Mutation) {
-	select {
-	case dh.dataChan <- mut:
-	// provides an alternative exit path when dh stops
-	case <-dh.finChan:
-	}
-}
-
+// implements StreamObserver
 func (dh *DifferDcpHandler) SnapshotMarker(startSeqno, endSeqno uint64, vbno uint16, streamID uint16, snapshotType gocbcore.SnapshotState) {
 	dh.dcpClient.dcpDriver.checkpointManager.updateSnapshot(vbno, startSeqno, endSeqno)
 }
@@ -290,16 +103,105 @@ func (dh *DifferDcpHandler) SeqNoAdvanced(vbID uint16, bySeqno uint64, streamID 
 	// Don't care
 }
 
-func (dh *DifferDcpHandler) checkColMigrationFilters(mut *Mutation) []uint8 {
-	var filterIdsMatched []uint8
-	for i, filter := range dh.colMigrationFiltersImpl {
-		// If at least one passed, let it through
-		matched, _, _, _ := filter.FilterUprEvent(mut.ToUprEvent())
-		if matched {
-			filterIdsMatched = append(filterIdsMatched, uint8(i))
+// END implements StreamObserver
+
+func (dh *DifferDcpHandler) Start() error {
+	err := dh.initialize()
+	if err != nil {
+		return err
+	}
+
+	dh.waitGrp.Add(1)
+	go dh.processData()
+
+	return nil
+}
+
+func (dh *DifferDcpHandler) Stop() {
+	close(dh.finChan)
+	// this sometimes does not return after a long time
+	//dh.waitGrp.Wait()
+
+	dh.cleanup()
+}
+
+func (dh *DifferDcpHandler) initialize() error {
+	for _, vbno := range dh.vbList {
+		innerMap := make(map[int]*Bucket)
+		dh.bucketMap[vbno] = innerMap
+		for i := 0; i < dh.numberOfBins; i++ {
+			bucket, err := NewBucket(dh.fileDir, vbno, i, dh.fdPool, dh.logger, dh.bufferCap)
+			if err != nil {
+				return err
+			}
+			innerMap[i] = bucket
 		}
 	}
-	return filterIdsMatched
+
+	return nil
+}
+
+func (dh *DifferDcpHandler) cleanup() {
+	for _, vbno := range dh.vbList {
+		innerMap := dh.bucketMap[vbno]
+		if innerMap == nil {
+			dh.logger.Warnf("Cannot find innerMap for Vbno %v at cleanup\n", vbno)
+			continue
+		}
+		for i := 0; i < dh.numberOfBins; i++ {
+			bucket := innerMap[i]
+			if bucket == nil {
+				dh.logger.Warnf("Cannot find bucket for Vbno %v and index %v at cleanup\n", vbno, i)
+				continue
+			}
+			//fmt.Printf("%v DifferDcpHandler closing bucket %v\n", dh.dcpClient.Name, i)
+			bucket.close()
+		}
+	}
+}
+
+func (dh *DifferDcpHandler) processData() {
+	dh.logger.Debugf("%v DifferDcpHandler %v processData starts..........\n", dh.dcpClient.Name, dh.index)
+	defer dh.logger.Debugf("%v DifferDcpHandler %v processData exits..........\n", dh.dcpClient.Name, dh.index)
+	defer dh.waitGrp.Done()
+
+	for {
+		select {
+		case <-dh.finChan:
+			goto done
+		case mut := <-dh.dataChan:
+			dh.processMutation(mut)
+		}
+	}
+done:
+}
+
+func (dh *DifferDcpHandler) processMutation(mut *Mutation) {
+	skipProcessing := dh.preProcessMutation(mut)
+	if skipProcessing {
+		return
+	}
+
+	vbno := mut.Vbno
+	index := utils.GetBucketIndexFromKey(mut.Key, dh.numberOfBins)
+	innerMap := dh.bucketMap[vbno]
+	if innerMap == nil {
+		panic(fmt.Sprintf("cannot find bucketMap for Vbno %v", vbno))
+	}
+	bucket := innerMap[index]
+	if bucket == nil {
+		panic(fmt.Sprintf("cannot find bucket for index %v", index))
+	}
+
+	bucket.write(mut.Serialize())
+}
+
+func (dh *DifferDcpHandler) writeToDataChan(mut *Mutation) {
+	select {
+	case dh.dataChan <- mut:
+	// provides an alternative exit path when dh stops
+	case <-dh.finChan:
+	}
 }
 
 type Bucket struct {
@@ -398,128 +300,4 @@ func (b *Bucket) close() {
 			b.logger.Errorf("Error closing file %v.  err=%v\n", b.fileName, err)
 		}
 	}
-}
-
-type Mutation struct {
-	Vbno              uint16
-	Key               []byte
-	Seqno             uint64
-	RevId             uint64
-	Cas               uint64
-	Flags             uint32
-	Expiry            uint32
-	OpCode            gomemcached.CommandCode
-	Value             []byte
-	Datatype          uint8
-	ColId             uint32
-	ColFiltersMatched []uint8 // Given a ordered list of filters, this list contains indexes of the ordered list of filter that matched
-}
-
-func CreateMutation(vbno uint16, key []byte, seqno, revId, cas uint64, flags, expiry uint32, opCode gomemcached.CommandCode, value []byte, datatype uint8, collectionId uint32) *Mutation {
-	return &Mutation{
-		Vbno:     vbno,
-		Key:      key,
-		Seqno:    seqno,
-		RevId:    revId,
-		Cas:      cas,
-		Flags:    flags,
-		Expiry:   expiry,
-		OpCode:   opCode,
-		Value:    value,
-		Datatype: datatype,
-		ColId:    collectionId,
-	}
-}
-
-func (m *Mutation) IsExpiration() bool {
-	return m.OpCode == gomemcached.UPR_EXPIRATION
-}
-
-func (m *Mutation) IsDeletion() bool {
-	return m.OpCode == gomemcached.UPR_DELETION
-}
-
-func (m *Mutation) IsMutation() bool {
-	return m.OpCode == gomemcached.UPR_MUTATION
-}
-
-func (m *Mutation) IsSystemEvent() bool {
-	return m.OpCode == gomemcached.DCP_SYSTEM_EVENT
-}
-
-func (m *Mutation) ToUprEvent() *xdcrBase.WrappedUprEvent {
-	uprEvent := &mcc.UprEvent{
-		Opcode:       m.OpCode,
-		VBucket:      m.Vbno,
-		DataType:     m.Datatype,
-		Flags:        m.Flags,
-		Expiry:       m.Expiry,
-		Key:          m.Key,
-		Value:        m.Value,
-		Cas:          m.Cas,
-		Seqno:        m.Seqno,
-		CollectionId: m.ColId,
-	}
-
-	return &xdcrBase.WrappedUprEvent{
-		UprEvent:     uprEvent,
-		ColNamespace: nil,
-		Flags:        0,
-		ByteSliceGetter: func(size uint64) ([]byte, error) {
-			return make([]byte, int(size)), nil
-		},
-	}
-}
-
-// serialize mutation into []byte
-// format:
-//
-//	keyLen   - 2 bytes
-//	Key  - length specified by keyLen
-//	Seqno    - 8 bytes
-//	RevId    - 8 bytes
-//	Cas      - 8 bytes
-//	Flags    - 4 bytes
-//	Expiry   - 4 bytes
-//	opType   - 2 byte
-//	Datatype - 2 byte
-//	hash     - 64 bytes
-//	collectionId - 4 bytes
-//	colFiltersLen - 1 byte (number of collection migration filters)
-//	(per col filter) - 1 byte
-func (mut *Mutation) Serialize() []byte {
-	keyLen := len(mut.Key)
-	ret := make([]byte, base.GetFixedSizeMutationLen(keyLen, mut.ColFiltersMatched))
-	bodyHash := sha512.Sum512(mut.Value)
-
-	pos := 0
-	binary.BigEndian.PutUint16(ret[pos:pos+2], uint16(keyLen))
-	pos += 2
-	copy(ret[pos:pos+keyLen], mut.Key)
-	pos += keyLen
-	binary.BigEndian.PutUint64(ret[pos:pos+8], mut.Seqno)
-	pos += 8
-	binary.BigEndian.PutUint64(ret[pos:pos+8], mut.RevId)
-	pos += 8
-	binary.BigEndian.PutUint64(ret[pos:pos+8], mut.Cas)
-	pos += 8
-	binary.BigEndian.PutUint32(ret[pos:pos+4], mut.Flags)
-	pos += 4
-	binary.BigEndian.PutUint32(ret[pos:pos+4], mut.Expiry)
-	pos += 4
-	binary.BigEndian.PutUint16(ret[pos:pos+2], uint16(mut.OpCode))
-	pos += 2
-	binary.BigEndian.PutUint16(ret[pos:pos+2], uint16(mut.Datatype))
-	pos += 2
-	copy(ret[pos:], bodyHash[:])
-	pos += 64
-	binary.BigEndian.PutUint32(ret[pos:pos+4], mut.ColId)
-	pos += 4
-	binary.BigEndian.PutUint16(ret[pos:pos+2], uint16(len(mut.ColFiltersMatched)))
-	pos += 2
-	for _, colFilterId := range mut.ColFiltersMatched {
-		binary.BigEndian.PutUint16(ret[pos:pos+2], uint16(colFilterId))
-		pos += 2
-	}
-	return ret
 }
