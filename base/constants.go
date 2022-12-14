@@ -9,7 +9,10 @@
 
 package base
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 const NumberOfVbuckets = 1024
 const DcpHandlerChanSize = 100000
@@ -155,6 +158,10 @@ const (
 	MutationRetriesKey                   = "mutationRetries"
 	MutationRetriesWaitSecsKey           = "mutationRetriesWaitSecs"
 	ObserveModeKey                       = "observeMode"
+	ObserveKeysKey                       = "observeKeys"
 )
 
 const ViperConfigFile = "config.json"
+
+var ErrorNoKeySpecified = fmt.Errorf("No key specified")
+var ErrorInvalidObserveKeysFormat = fmt.Errorf("Invalid format given for %v", ObserveKeysKey)
