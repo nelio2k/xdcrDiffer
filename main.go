@@ -238,7 +238,10 @@ func runDiffer() {
 }
 
 func runObserver() {
-	observer, err := observer.NewObserverTool()
+	getScopesCollectionMap := func() map[string]interface{} {
+		return viper.GetStringMap(base.ObserveKeysKey)
+	}
+	observer, err := observer.NewObserverTool(getScopesCollectionMap)
 	if err != nil {
 		fmt.Errorf("Error creating observer: %v", err)
 		os.Exit(1)

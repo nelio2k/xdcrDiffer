@@ -2,27 +2,31 @@ package observer
 
 import (
 	"fmt"
-	"github.com/spf13/viper"
 	"sync"
+
+	"github.com/spf13/viper"
+
 	"xdcrDiffer/base"
 	"xdcrDiffer/dcp"
 	"xdcrDiffer/differCommon"
 	"xdcrDiffer/fileDescriptorPool"
 )
 
-// ObserverEphImpl stands for Observer Ephemeral Implementation
+// ObserveEphImpl stands for Observer Ephemeral Implementation
 // This observer will keep all things in memory for observation
-type ObserverEphImpl struct {
+type ObserveEphImpl struct {
 	*differCommon.XdcrDependencies
+	*ObserveCommon
 
 	sourceDcpDriver *dcp.DcpDriver
 	targetDcpDriver *dcp.DcpDriver
 }
 
-func NewObserverTool() (*ObserverEphImpl, error) {
+func NewObserverTool(observeKeysGetter func() map[string]interface{}) (*ObserveEphImpl, error) {
 	var err error
-	observer := &ObserverEphImpl{}
+	observer := &ObserveEphImpl{}
 	observer.XdcrDependencies, err = differCommon.NewXdcrDependencies()
+	observer.ObserveCommon = NewObserveCommon(observer.Logger(), observeKeysGetter)
 	if err != nil {
 		return nil, err
 	}
@@ -30,7 +34,7 @@ func NewObserverTool() (*ObserverEphImpl, error) {
 	return observer, nil
 }
 
-func (o *ObserverEphImpl) Run() error {
+func (o *ObserveEphImpl) Run() error {
 	var fileDescPool fileDescriptorPool.FdPoolIface
 	if viper.GetInt(base.NumberOfFileDescKey) > 0 {
 		fileDescPool = fileDescriptorPool.NewFileDescriptorPool(viper.GetInt(base.NumberOfFileDescKey))
@@ -38,6 +42,10 @@ func (o *ObserverEphImpl) Run() error {
 
 	errChan := make(chan error, 1)
 	waitGroup := &sync.WaitGroup{}
+
+	if err := o.TranslateObserverKeysList(); err != nil {
+		return err
+	}
 
 	o.sourceDcpDriver = dcp.StartDcpDriver(o.Logger(), base.SourceClusterName, viper.GetString(base.SourceUrlKey),
 		o.SpecifiedSpec.SourceBucketName,

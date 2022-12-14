@@ -30,7 +30,7 @@ type XdcrDependencies struct {
 	RemoteClusterSvc        service_def.RemoteClusterSvc
 	ReplicationSpecSvc      service_def.ReplicationSpecSvc
 	collectionsManifestsSvc service_def.CollectionsManifestSvc
-	logger                  *xdcrLog.CommonLogger
+	LoggerObj               *xdcrLog.CommonLogger
 	xdcrTopologySvc         service_def.XDCRCompTopologySvc
 	SelfRef                 *metadata.RemoteClusterReference
 	selfRefPopulated        uint32
@@ -65,7 +65,7 @@ type XdcrDependencies struct {
 func NewXdcrDependencies() (*XdcrDependencies, error) {
 	deps := &XdcrDependencies{
 		Utils:                   xdcrUtils.NewUtilities(),
-		logger:                  xdcrLog.NewLogger("XdcrDiffTool", nil),
+		LoggerObj:               xdcrLog.NewLogger("XdcrDiffTool", nil),
 		SrcToTgtColIdsMap:       make(map[uint32][]uint32),
 		colFilterToTgtColIdsMap: map[string][]uint32{},
 	}
@@ -99,7 +99,7 @@ func NewXdcrDependencies() (*XdcrDependencies, error) {
 	}
 
 	deps.ReplicationSpecSvc, err = metadata_svc.NewReplicationSpecService(uiLogSvcMock, deps.RemoteClusterSvc,
-		deps.metadataSvc, xdcrTopologyMock, resolverSvcMock, deps.logger.LoggerContext(), deps.Utils,
+		deps.metadataSvc, xdcrTopologyMock, resolverSvcMock, deps.LoggerObj.LoggerContext(), deps.Utils,
 		replicationSettingSvc)
 	if err != nil {
 		return nil, err
@@ -123,11 +123,11 @@ func NewXdcrDependencies() (*XdcrDependencies, error) {
 	}
 
 	bucketTopologySvc, err := service_impl.NewBucketTopologyService(xdcrTopologyMock, deps.RemoteClusterSvc,
-		deps.Utils, xdcrBase.TopologyChangeCheckInterval, deps.logger.LoggerContext(),
+		deps.Utils, xdcrBase.TopologyChangeCheckInterval, deps.LoggerObj.LoggerContext(),
 		deps.ReplicationSpecSvc, xdcrBase.HealthCheckInterval, securitySvc, streamApiWatcher.GetStreamApiWatcher)
 
 	deps.collectionsManifestsSvc, err = metadata_svc.NewCollectionsManifestService(deps.RemoteClusterSvc,
-		deps.ReplicationSpecSvc, uiLogSvcMock, deps.logger.LoggerContext(), deps.Utils, checkpointSvcMock,
+		deps.ReplicationSpecSvc, uiLogSvcMock, deps.LoggerObj.LoggerContext(), deps.Utils, checkpointSvcMock,
 		xdcrTopologyMock, bucketTopologySvc, manifestsSvcMock)
 	if err != nil {
 		return nil, err
@@ -150,7 +150,7 @@ func (deps *XdcrDependencies) retrieveCapabilities() error {
 }
 
 func (deps *XdcrDependencies) Logger() *xdcrLog.CommonLogger {
-	return deps.logger
+	return deps.LoggerObj
 }
 
 func (deps *XdcrDependencies) retrieveReplicationSpecInfo() error {
@@ -159,31 +159,31 @@ func (deps *XdcrDependencies) retrieveReplicationSpecInfo() error {
 	deps.SpecifiedRef, err = deps.RemoteClusterSvc.RemoteClusterByRefName(viper.GetString(base.RemoteClusterNameKey), true /*refresh*/)
 	if err != nil {
 		for err != nil && err == metadata_svc.RefreshNotEnabledYet {
-			deps.logger.Infof("Difftool hasn't finished reaching out to remote cluster. Sleeping 5 seconds and retrying...")
+			deps.LoggerObj.Infof("Difftool hasn't finished reaching out to remote cluster. Sleeping 5 seconds and retrying...")
 			time.Sleep(5 * time.Second)
 			deps.SpecifiedRef, err = deps.RemoteClusterSvc.RemoteClusterByRefName(viper.GetString(base.RemoteClusterNameKey), true /*refresh*/)
 		}
 		if err != nil {
-			deps.logger.Errorf("Error retrieving remote clusters: %v\n", err)
+			deps.LoggerObj.Errorf("Error retrieving remote clusters: %v\n", err)
 			return err
 		}
 	}
 
 	if viper.GetBool(base.EnforceTLSKey) && !deps.SpecifiedRef.IsHttps() {
 		err = fmt.Errorf("enforceTLS requires that the remote cluster reference %v to use Full-Encryption mode", deps.SpecifiedRef.Name())
-		deps.logger.Errorf(err.Error())
+		deps.LoggerObj.Errorf(err.Error())
 		return err
 	}
 
 	if viper.GetString(base.TargetUsernameKey) != "" && viper.GetString(base.TargetUsernameKey) != deps.SpecifiedRef.UserName() && viper.GetString(base.TargetPasswordKey) != "" && viper.GetString(base.TargetPasswordKey) != deps.SpecifiedRef.Password() {
 		err = fmt.Errorf("user-specified username and password is different from that of the credentials from reference %v", deps.SpecifiedRef.Name())
-		deps.logger.Errorf(err.Error())
+		deps.LoggerObj.Errorf(err.Error())
 		return err
 	}
 
 	specMap, err := deps.ReplicationSpecSvc.AllReplicationSpecs()
 	if err != nil {
-		deps.logger.Errorf("Error retrieving specs: %v\n", err)
+		deps.LoggerObj.Errorf("Error retrieving specs: %v\n", err)
 		return err
 	}
 
@@ -195,16 +195,16 @@ func (deps *XdcrDependencies) retrieveReplicationSpecInfo() error {
 	}
 
 	if deps.SpecifiedSpec == nil {
-		deps.logger.Warnf("Unable to find Replication Spec with source %v target %v, attempting to create a temporary one\n", viper.GetString(base.SourceBucketNameKey), viper.GetString(base.TargetBucketNameKey))
+		deps.LoggerObj.Warnf("Unable to find Replication Spec with source %v target %v, attempting to create a temporary one\n", viper.GetString(base.SourceBucketNameKey), viper.GetString(base.TargetBucketNameKey))
 		// Create a dummy spec
 		deps.SpecifiedSpec, err = metadata.NewReplicationSpecification(viper.GetString(base.SourceBucketNameKey), "" /*sourceBucketUUID*/, deps.SpecifiedRef.Uuid(), viper.GetString(base.TargetBucketNameKey), "" /*targetBucketUUID*/)
 		if err != nil {
-			deps.logger.Errorf(err.Error())
+			deps.LoggerObj.Errorf(err.Error())
 		}
 		return err
 	}
 
-	deps.logger.Infof("Found Remote Cluster: %v and Replication Spec: %v\n", deps.SpecifiedRef.String(), deps.SpecifiedSpec.String())
+	deps.LoggerObj.Infof("Found Remote Cluster: %v and Replication Spec: %v\n", deps.SpecifiedRef.String(), deps.SpecifiedSpec.String())
 
 	return deps.PopulateSelfRef()
 }
@@ -232,7 +232,7 @@ func (deps *XdcrDependencies) PopulateSelfRef() error {
 		refHttpAuthMech, defaultPoolInfo, _, err := deps.Utils.GetSecuritySettingsAndDefaultPoolInfo(viper.GetString(base.SourceUrlKey),
 			internalHttpsHostname, deps.SelfRef.UserName(), deps.SelfRef.Password(),
 			deps.SelfRef.Certificates(), deps.SelfRef.ClientCertificate(), deps.SelfRef.ClientKey(),
-			deps.SelfRef.IsHalfEncryption(), deps.logger)
+			deps.SelfRef.IsHalfEncryption(), deps.LoggerObj)
 		if err != nil {
 			return fmt.Errorf("unable to get security settings: %v", err)
 		}
@@ -241,12 +241,12 @@ func (deps *XdcrDependencies) PopulateSelfRef() error {
 
 		if refHttpAuthMech == xdcrBase.HttpAuthMechHttps {
 			// Need to get the secure port and attach it
-			internalSSLPort, internalSSLPortErr, _, _ := deps.Utils.GetRemoteSSLPorts(viper.GetString(base.SourceUrlKey), deps.logger)
+			internalSSLPort, internalSSLPortErr, _, _ := deps.Utils.GetRemoteSSLPorts(viper.GetString(base.SourceUrlKey), deps.LoggerObj)
 			if internalSSLPortErr == nil {
 				sslHostString := xdcrBase.GetHostAddr(xdcrBase.GetHostName(viper.GetString(base.SourceUrlKey)), internalSSLPort)
 				deps.SelfRef.SetHttpsHostName(sslHostString)
 				deps.SelfRef.SetActiveHttpsHostName(sslHostString)
-				deps.logger.Infof("Received SSL port to be %v and setting TLS hostname to %v", internalSSLPort, sslHostString)
+				deps.LoggerObj.Infof("Received SSL port to be %v and setting TLS hostname to %v", internalSSLPort, sslHostString)
 			}
 		}
 	}
@@ -265,17 +265,17 @@ func (deps *XdcrDependencies) PopulateSelfRef() error {
 // This is needed whenever source and tgt clusters are >= 7.0
 func (deps *XdcrDependencies) PopulateManifestsAndMappings() error {
 	var err error
-	deps.logger.Infof("Waiting 15 sec for manfiest service to initialize and then getting manifest for source Bucket %v target Bucket %v...\n", deps.SpecifiedSpec.SourceBucketName, deps.SpecifiedSpec.TargetBucketName)
+	deps.LoggerObj.Infof("Waiting 15 sec for manfiest service to initialize and then getting manifest for source Bucket %v target Bucket %v...\n", deps.SpecifiedSpec.SourceBucketName, deps.SpecifiedSpec.TargetBucketName)
 	time.Sleep(15 * time.Second)
 
 	deps.srcBucketManifest, deps.tgtBucketManifest, err = deps.collectionsManifestsSvc.GetLatestManifests(deps.SpecifiedSpec, false)
 	if err != nil {
-		deps.logger.Errorf("PopulateManifestsAndMappings() - %v\n", err)
+		deps.LoggerObj.Errorf("PopulateManifestsAndMappings() - %v\n", err)
 		return err
 	}
 
-	deps.logger.Infof("Source manifest: %v", deps.srcBucketManifest)
-	deps.logger.Infof("Target manifest: %v", deps.tgtBucketManifest)
+	deps.LoggerObj.Infof("Source manifest: %v", deps.srcBucketManifest)
+	deps.LoggerObj.Infof("Target manifest: %v", deps.tgtBucketManifest)
 	// Store the manifests in files
 	err = deps.outputManifestsToFiles(err)
 	if err != nil {
@@ -285,13 +285,13 @@ func (deps *XdcrDependencies) PopulateManifestsAndMappings() error {
 	modes := deps.SpecifiedSpec.Settings.GetCollectionModes()
 	rules := deps.SpecifiedSpec.Settings.GetCollectionsRoutingRules()
 	if modes.IsMigrationOn() && rules.IsExplicitMigrationRule() {
-		deps.logger.Infof("Replication spec is using special migration mapping")
+		deps.LoggerObj.Infof("Replication spec is using special migration mapping")
 	} else if modes.IsMigrationOn() {
-		deps.logger.Infof("Replication spec is using migration mode")
+		deps.LoggerObj.Infof("Replication spec is using migration mode")
 	} else if modes.IsExplicitMapping() {
-		deps.logger.Infof("Replication spec is using explicit mapping")
+		deps.LoggerObj.Infof("Replication spec is using explicit mapping")
 	} else {
-		deps.logger.Infof("Replication spec is using implicit mapping")
+		deps.LoggerObj.Infof("Replication spec is using implicit mapping")
 	}
 	err = deps.compileCollectionMapping()
 	if err != nil {
@@ -307,25 +307,25 @@ func (deps *XdcrDependencies) PopulateManifestsAndMappings() error {
 func (deps *XdcrDependencies) outputManifestsToFiles(err error) error {
 	srcManJson, err := json.Marshal(deps.srcBucketManifest)
 	if err != nil {
-		deps.logger.Errorf("SrcManifestMarshal - %v\n", err)
+		deps.LoggerObj.Errorf("SrcManifestMarshal - %v\n", err)
 		return err
 	}
 
 	tgtManJson, err := json.Marshal(deps.tgtBucketManifest)
 	if err != nil {
-		deps.logger.Errorf("TgtManifestMarshal - %v\n", err)
+		deps.LoggerObj.Errorf("TgtManifestMarshal - %v\n", err)
 		return err
 	}
 
 	err = ioutil.WriteFile(utils.GetManifestFileName(viper.GetString(base.SourceFileDirKey)), srcManJson, 0644)
 	if err != nil {
-		deps.logger.Errorf("SrcManifestWrite - %v\n", err)
+		deps.LoggerObj.Errorf("SrcManifestWrite - %v\n", err)
 		return err
 	}
 
 	err = ioutil.WriteFile(utils.GetManifestFileName(viper.GetString(base.TargetFileDirKey)), tgtManJson, 0644)
 	if err != nil {
-		deps.logger.Errorf("TgtManifestWrite - %v\n", err)
+		deps.LoggerObj.Errorf("TgtManifestWrite - %v\n", err)
 		return err
 	}
 	return nil
@@ -338,7 +338,7 @@ func (deps *XdcrDependencies) compileCollectionMapping() error {
 	}
 	namespaceMapping, err := metadata.NewCollectionNamespaceMappingFromRules(pair, deps.SpecifiedSpec.Settings.GetCollectionModes(), deps.SpecifiedSpec.Settings.GetCollectionsRoutingRules(), false, false)
 	if err != nil {
-		deps.logger.Errorf("NewCollectionNamespaceMappingFromRules err: %v", err)
+		deps.LoggerObj.Errorf("NewCollectionNamespaceMappingFromRules err: %v", err)
 		return err
 	}
 
@@ -360,7 +360,7 @@ func (deps *XdcrDependencies) compileMigrationMapping(nsMappings metadata.Collec
 		for _, tgtNs := range tgtNsList {
 			colId, err := deps.tgtBucketManifest.GetCollectionId(tgtNs.ScopeName, tgtNs.CollectionName)
 			if err != nil {
-				deps.logger.Errorf("Cannot find target namespace in manifest: %v", tgtNs.ToIndexString())
+				deps.LoggerObj.Errorf("Cannot find target namespace in manifest: %v", tgtNs.ToIndexString())
 				continue
 			}
 			if _, exists := deps.colFilterToTgtColIdsMap[srcNs.String()]; !exists {
@@ -373,9 +373,9 @@ func (deps *XdcrDependencies) compileMigrationMapping(nsMappings metadata.Collec
 		deps.ColFilterOrderedKeys = append(deps.ColFilterOrderedKeys, srcNs.String())
 	}
 
-	deps.logger.Infof("Collections Migrations filters:\n")
+	deps.LoggerObj.Infof("Collections Migrations filters:\n")
 	for i, filterStr := range deps.ColFilterOrderedKeys {
-		deps.logger.Infof("%v : %v -> %v", i, filterStr, deps.colFilterOrderedTargetNs[i].ToIndexString())
+		deps.LoggerObj.Infof("%v : %v -> %v", i, filterStr, deps.colFilterOrderedTargetNs[i].ToIndexString())
 	}
 
 	// Ensure that the colIdMappings are handled accordingly
@@ -401,11 +401,11 @@ func (deps *XdcrDependencies) compileHardcodedColToColMapping(namespaceMapping m
 			tgtColId, tgtErr := deps.tgtBucketManifest.GetCollectionId(tgtScopeName, tgtCollectionName)
 
 			if srcErr != nil {
-				deps.logger.Errorf("Cannot find %v - %v from source manifest %v\n", scopeName, collectionName, srcErr)
+				deps.LoggerObj.Errorf("Cannot find %v - %v from source manifest %v\n", scopeName, collectionName, srcErr)
 				continue
 			}
 			if tgtErr != nil {
-				deps.logger.Errorf("Cannot find %v - %v from target manifest %v\n", scopeName, collectionName, tgtErr)
+				deps.LoggerObj.Errorf("Cannot find %v - %v from target manifest %v\n", scopeName, collectionName, tgtErr)
 				continue
 			}
 
@@ -414,7 +414,7 @@ func (deps *XdcrDependencies) compileHardcodedColToColMapping(namespaceMapping m
 		}
 	}
 
-	deps.logger.Infof("Collection namespace mapping: %v idsMap: %v", namespaceMapping, deps.SrcToTgtColIdsMap)
+	deps.LoggerObj.Infof("Collection namespace mapping: %v idsMap: %v", namespaceMapping, deps.SrcToTgtColIdsMap)
 }
 
 func (deps *XdcrDependencies) generateSrcAndTgtColIds() {
@@ -478,17 +478,17 @@ func (deps *XdcrDependencies) RetrieveClustersCapabilities(legacyMode bool) erro
 	defaultPoolInfo, err := deps.Utils.GetClusterInfo(connStr, xdcrBase.DefaultPoolPath, deps.SelfRef.UserName(),
 		deps.SelfRef.Password(), deps.SelfRef.HttpAuthMech(), deps.SelfRef.Certificates(),
 		deps.SelfRef.SANInCertificate(), deps.SelfRef.ClientCertificate(), deps.SelfRef.ClientKey(),
-		deps.logger)
+		deps.LoggerObj)
 	if err != nil {
 		return fmt.Errorf("retrieveClusterCapabilities.getClusterInfo(%v) - %v", deps.SelfRef.Name(), err)
 	}
 
-	err = deps.SrcCapabilities.LoadFromDefaultPoolInfo(defaultPoolInfo, deps.logger)
+	err = deps.SrcCapabilities.LoadFromDefaultPoolInfo(defaultPoolInfo, deps.LoggerObj)
 	if err != nil {
 		return fmt.Errorf("retrieveClusterCapabilities.LoadFromDefaultPoolInfo(%v) - %v", defaultPoolInfo, err)
 	}
 
-	deps.logger.Infof("Source cluster supports collections: %v Target cluster supports collections: %v\n",
+	deps.LoggerObj.Infof("Source cluster supports collections: %v Target cluster supports collections: %v\n",
 		deps.SrcCapabilities.HasCollectionSupport(), deps.TgtCapabilities.HasCollectionSupport())
 
 	if deps.SrcCapabilities.HasCollectionSupport() || deps.TgtCapabilities.HasCollectionSupport() {
