@@ -165,3 +165,7 @@ const ViperConfigFile = "config.json"
 
 var ErrorNoKeySpecified = fmt.Errorf("No key specified")
 var ErrorInvalidObserveKeysFormat = fmt.Errorf("Invalid format given for %v", ObserveKeysKey)
+var ErrorNoManifestProvided = fmt.Errorf("No manifest has been provided")
+var ErrorScopeCollectionNotFoundInManifest = fmt.Errorf("Scope or collection not found in manifest")
+var ErrorUnableToMap = fmt.Errorf("Unable to map")
+var ErrorKeyAlreadyExists = fmt.Errorf("Key already exists")

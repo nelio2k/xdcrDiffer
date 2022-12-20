@@ -20,13 +20,16 @@ type ObserveEphImpl struct {
 
 	sourceDcpDriver *dcp.DcpDriver
 	targetDcpDriver *dcp.DcpDriver
+
+	keysGetter func() map[string]interface{}
 }
 
 func NewObserverTool(observeKeysGetter func() map[string]interface{}) (*ObserveEphImpl, error) {
 	var err error
-	observer := &ObserveEphImpl{}
+	observer := &ObserveEphImpl{
+		keysGetter: observeKeysGetter,
+	}
 	observer.XdcrDependencies, err = differCommon.NewXdcrDependencies()
-	observer.ObserveCommon = NewObserveCommon(observer.Logger(), observeKeysGetter)
 	if err != nil {
 		return nil, err
 	}
@@ -43,7 +46,16 @@ func (o *ObserveEphImpl) Run() error {
 	errChan := make(chan error, 1)
 	waitGroup := &sync.WaitGroup{}
 
-	if err := o.TranslateObserverKeysList(); err != nil {
+	// Prior to observe, need to establish collection links
+	manifestsPair, err := o.GetManifestsPair()
+	if err != nil {
+		return err
+	}
+	o.ObserveCommon, err = NewObserveCommon(o.Logger(), o.keysGetter, o.SrcToTgtColIdsMap, manifestsPair)
+	if err != nil {
+		return err
+	}
+	if err = o.TranslateObserverKeysList(); err != nil {
 		return err
 	}
 
