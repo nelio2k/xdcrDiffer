@@ -42,6 +42,7 @@ type XdcrDependencies struct {
 	capabilityOnce          sync.Once
 	srcBucketManifest       *metadata.CollectionsManifest
 	tgtBucketManifest       *metadata.CollectionsManifest
+	manifestsPopulated      uint32
 
 	selfDefaultPoolInfo map[string]interface{}
 	selfPoolsNodes      map[string]interface{}
@@ -273,6 +274,7 @@ func (deps *XdcrDependencies) PopulateManifestsAndMappings() error {
 		deps.LoggerObj.Errorf("PopulateManifestsAndMappings() - %v\n", err)
 		return err
 	}
+	atomic.StoreUint32(&deps.manifestsPopulated, 1)
 
 	deps.LoggerObj.Infof("Source manifest: %v", deps.srcBucketManifest)
 	deps.LoggerObj.Infof("Target manifest: %v", deps.tgtBucketManifest)
@@ -302,6 +304,26 @@ func (deps *XdcrDependencies) PopulateManifestsAndMappings() error {
 	deps.generateSrcAndTgtColIds()
 
 	return nil
+}
+
+func (deps *XdcrDependencies) GetManifestsPair() (*metadata.CollectionsManifestPair, error) {
+	defaultManifest := metadata.NewDefaultCollectionsManifest()
+	if atomic.LoadUint32(&deps.manifestsPopulated) == 0 {
+		if deps.SrcCapabilities.HasCollectionSupport() && deps.TgtCapabilities.HasCollectionSupport() {
+			return nil, fmt.Errorf("Manifests have not been populated")
+		}
+		// Only default manifests allowed
+		return &metadata.CollectionsManifestPair{
+			Source: &defaultManifest,
+			Target: &defaultManifest,
+		}, nil
+	}
+
+	return &metadata.CollectionsManifestPair{
+		Source: deps.srcBucketManifest,
+		Target: deps.tgtBucketManifest,
+	}, nil
+
 }
 
 func (deps *XdcrDependencies) outputManifestsToFiles(err error) error {
