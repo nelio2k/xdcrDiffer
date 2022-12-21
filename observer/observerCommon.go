@@ -10,15 +10,17 @@ import (
 	"xdcrDiffer/base"
 )
 
-type KeysHistory struct {
+// KeysHistoryEphemeral implements observer's History interface
+// It stores the information in memory only
+type KeysHistoryEphemeral struct {
 	// TODO - add more history as part of listener
 }
 
-func NewKeysHistory() KeysHistory {
-	return KeysHistory{}
+func NewKeysHistory() KeysHistoryEphemeral {
+	return KeysHistoryEphemeral{}
 }
 
-type KeysLookupMap map[string]KeysHistory
+type KeysLookupMap map[string]History
 
 func (k *KeysLookupMap) AddNewKey(key string) error {
 	if _, ok := (*k)[key]; !ok {
@@ -27,6 +29,14 @@ func (k *KeysLookupMap) AddNewKey(key string) error {
 	}
 
 	return base.ErrorKeyAlreadyExists
+}
+
+func (k *KeysLookupMap) Get(key string) (History, error) {
+	if history, ok := (*k)[key]; !ok {
+		return KeysHistoryEphemeral{}, base.ErrorKeyDoesNotExist
+	} else {
+		return history, nil
+	}
 }
 
 type ObserveKeysMap struct {
@@ -94,6 +104,24 @@ func (m *ObserveKeysMap) Add(ns *xdcrBase.CollectionNamespace, key string) error
 		}
 	}
 	return nil
+}
+
+func (m *ObserveKeysMap) MutationIsObserved(mut *base.Mutation, isSource bool) bool {
+	mapToCheck := m.srcKeysMap
+	if !isSource {
+		mapToCheck = m.tgtKeysMap
+	}
+	m.mtx.RLock()
+	defer m.mtx.RUnlock()
+
+	if lookupMap, ok := mapToCheck[mut.ColId]; !ok {
+		// This collection is not being watched
+		return false
+	} else {
+		_, getErr := lookupMap.Get(string(mut.Key))
+		return getErr == nil
+	}
+
 }
 
 func NewObserveKeysMap(logger *log.CommonLogger, srcToTgtColIds map[uint32][]uint32) (*ObserveKeysMap, error) {

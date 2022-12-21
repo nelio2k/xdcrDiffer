@@ -3,6 +3,7 @@ package observer
 import (
 	"fmt"
 	"sync"
+	"xdcrDiffer/observerHandler"
 
 	"github.com/spf13/viper"
 
@@ -71,7 +72,7 @@ func (o *ObserveEphImpl) Run() error {
 		viper.GetUint64(base.GetStatsMaxBackoffKey), viper.GetUint64(base.CheckpointIntervalKey), errChan, waitGroup,
 		false /*completeBySeqno*/, fileDescPool, o.Filter,
 		o.SrcCapabilities, o.SrcCollectionIds, o.ColFilterOrderedKeys, o.Utils,
-		viper.GetInt(base.BucketBufferCapacityKey), dcp.ConstructObserverDcpHandler)
+		viper.GetInt(base.BucketBufferCapacityKey), o.ConstructObserverDcpHandlerSource)
 
 	o.targetDcpDriver = dcp.StartDcpDriver(o.Logger(), base.TargetClusterName, o.SpecifiedRef.HostName_,
 		o.SpecifiedSpec.TargetBucketName, o.SpecifiedRef,
@@ -84,8 +85,63 @@ func (o *ObserveEphImpl) Run() error {
 		viper.GetUint64(base.CheckpointIntervalKey), errChan, waitGroup,
 		viper.GetBool(base.CompleteBySeqnoKey), fileDescPool, o.Filter,
 		o.TgtCapabilities, o.TgtCollectionIds, o.ColFilterOrderedKeys, o.Utils,
-		viper.GetInt(base.BucketBufferCapacityKey), dcp.ConstructObserverDcpHandler)
+		viper.GetInt(base.BucketBufferCapacityKey), o.ConstructObserverDcpHandlerTarget)
 
 	fmt.Printf("NEIL DEBUG not implemented yet\n")
 	return fmt.Errorf("Not implemented yet")
+}
+
+func (o *ObserveEphImpl) ConstructObserverDcpHandlerSource(dcpClient *dcp.DcpClient, d *dcp.DcpDriver, j int, handlerVBList []uint16) (dcp.DcpHandler, error) {
+	common, err := dcp.ConstructDcpHandlerCommon(dcpClient, d, handlerVBList)
+	if err != nil {
+		return nil, err
+	}
+	observerHandler, err := o.GetDcpHandlerSource()
+	if err != nil {
+		return nil, err
+	}
+
+	return dcp.NewObserverEphDcpHandler(common, observerHandler)
+}
+
+func (o *ObserveEphImpl) ConstructObserverDcpHandlerTarget(dcpClient *dcp.DcpClient, d *dcp.DcpDriver, j int, handlerVBList []uint16) (dcp.DcpHandler, error) {
+	common, err := dcp.ConstructDcpHandlerCommon(dcpClient, d, handlerVBList)
+	if err != nil {
+		return nil, err
+	}
+	observerHandler, err := o.GetDcpHandlerTarget()
+	if err != nil {
+		return nil, err
+	}
+
+	return dcp.NewObserverEphDcpHandler(common, observerHandler)
+}
+
+func (o *ObserveEphImpl) GetDcpHandlerSource() (observerHandler.ObserverHandler, error) {
+	handler := newInternalHandler(o, true)
+	return handler, nil
+}
+
+func (o *ObserveEphImpl) GetDcpHandlerTarget() (observerHandler.ObserverHandler, error) {
+	handler := newInternalHandler(o, false)
+	return handler, nil
+}
+
+func newInternalHandler(o *ObserveEphImpl, isSource bool) *internalHandler {
+	return &internalHandler{
+		o:        o,
+		isSource: isSource,
+	}
+}
+
+type internalHandler struct {
+	o        *ObserveEphImpl
+	isSource bool
+}
+
+func (i *internalHandler) HandleMutation(mut *base.Mutation) {
+	if !i.o.observeKeysMap.MutationIsObserved(mut, i.isSource) {
+		return
+	}
+
 }

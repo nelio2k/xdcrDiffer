@@ -424,7 +424,7 @@ func StartDcpDriverAysnc(dcpDriver *DcpDriver, errChan chan error, logger *xdcrL
 }
 
 func ConstructDifferDcpHandler(dcpClient *DcpClient, d *DcpDriver, j int, handlerVBList []uint16) (DcpHandler, error) {
-	common, err := constructDcpHandlerCommon(dcpClient, d, handlerVBList)
+	common, err := ConstructDcpHandlerCommon(dcpClient, d, handlerVBList)
 	if err != nil {
 		return nil, err
 	}
@@ -436,20 +436,11 @@ func ConstructDifferDcpHandler(dcpClient *DcpClient, d *DcpDriver, j int, handle
 	return dcpHandler, err
 }
 
-func constructDcpHandlerCommon(dcpClient *DcpClient, d *DcpDriver, handlerVBList []uint16) (*DcpHandlerCommon, error) {
+func ConstructDcpHandlerCommon(dcpClient *DcpClient, d *DcpDriver, handlerVBList []uint16) (*DcpHandlerCommon, error) {
 	common, err := NewDcpHandlerCommon(dcpClient, handlerVBList, d.dcpHandlerChanSize, d.IncrementDocReceived,
 		d.IncrementSysEventReceived, d.colMigrationFilters, d.utils)
 	if err != nil {
 		return nil, err
 	}
 	return common, nil
-}
-
-func ConstructObserverDcpHandler(dcpClient *DcpClient, d *DcpDriver, j int, handlerVBList []uint16) (DcpHandler, error) {
-	common, err := constructDcpHandlerCommon(dcpClient, d, handlerVBList)
-	if err != nil {
-		return nil, err
-	}
-
-	return NewObserverEphDcpHandler(common)
 }

@@ -549,10 +549,10 @@ func (cm *CheckpointManager) RecordFilterEvent(vbno uint16, filterResult base.Fi
 }
 
 // no need to lock seqoMap since
-// 1. MutationProcessedEvent on a Vbno are serialized
-// 2. checkpointManager reads seqnoMap when it saves checkpoints.
-//    This is done after all DcpHandlers are stopped and MutationProcessedEvent cease to happen
-func (cm *CheckpointManager) HandleMutationEvent(mut *Mutation, filterResult base.FilterResultType) bool {
+//  1. MutationProcessedEvent on a Vbno are serialized
+//  2. checkpointManager reads seqnoMap when it saves checkpoints.
+//     This is done after all DcpHandlers are stopped and MutationProcessedEvent cease to happen
+func (cm *CheckpointManager) HandleMutationEvent(mut *base.Mutation, filterResult base.FilterResultType) bool {
 	if cm.dcpDriver.completeBySeqno {
 		endSeqno := cm.endSeqnoMap[mut.Vbno]
 		if mut.Seqno >= endSeqno {

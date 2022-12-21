@@ -20,7 +20,7 @@ import (
 	"sync"
 	"testing"
 	"time"
-	"xdcrDiffer/dcp"
+	"xdcrDiffer/base"
 	fdp "xdcrDiffer/fileDescriptorPool"
 )
 
@@ -43,15 +43,16 @@ func randInt(min int, max int) int {
 
 // serialize mutation into []byte
 // format:
-//  keyLen  - 2 bytes
-//  key  - length specified by keyLen
-//  seqno   - 8 bytes
-//  revId   - 8 bytes
-//  cas     - 8 bytes
-//  flags   - 4 bytes
-//  expiry  - 4 bytes
-//  opCode - 1 bytes
-//  hash    - 64 bytes
+//
+//	keyLen  - 2 bytes
+//	key  - length specified by keyLen
+//	seqno   - 8 bytes
+//	revId   - 8 bytes
+//	cas     - 8 bytes
+//	flags   - 4 bytes
+//	expiry  - 4 bytes
+//	opCode - 1 bytes
+//	hash    - 64 bytes
 func genTestData(regularMutation, colFilters bool) (key string, seqno, revId, cas uint64, flags, expiry uint32, opCode gomemcached.CommandCode, hash [64]byte, ret []byte, colId uint32, filterIds []uint8) {
 	randomOnce.Do(func() {
 		rand.Seed(time.Now().UTC().UnixNano())
@@ -80,7 +81,7 @@ func genTestData(regularMutation, colFilters bool) (key string, seqno, revId, ca
 	}
 
 	//dataSlice := createDataByteSlice(key, seqno, revId, cas, flags, expiry, opCode, hash, colId, filterIds)
-	mutationToSerialize := dcp.Mutation{
+	mutationToSerialize := base.Mutation{
 		Vbno:              0,
 		Key:               []byte(key),
 		Seqno:             seqno,
@@ -155,7 +156,7 @@ func genMismatchedFiles(numOfRecords, mismatchCnt int, fileName1, fileName2 stri
 
 	for i := 0; i < mismatchCnt; i++ {
 		key, seqno, revId, cas, flags, expiry, opCode, _, oneData, colId, _ := genTestData(true, false)
-		mismatchedDataMut := &dcp.Mutation{
+		mismatchedDataMut := &base.Mutation{
 			Vbno:              0,
 			Key:               []byte(key),
 			Seqno:             seqno,

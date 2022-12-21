@@ -49,15 +49,15 @@ func (dh *DifferDcpHandler) SnapshotMarker(startSeqno, endSeqno uint64, vbno uin
 }
 
 func (dh *DifferDcpHandler) Mutation(seqno, revId uint64, flags, expiry, lockTime uint32, cas uint64, datatype uint8, vbno uint16, collectionID uint32, streamID uint16, key, value []byte) {
-	dh.writeToDataChan(CreateMutation(vbno, key, seqno, revId, cas, flags, expiry, gomemcached.UPR_MUTATION, value, datatype, collectionID))
+	dh.writeToDataChan(base.CreateMutation(vbno, key, seqno, revId, cas, flags, expiry, gomemcached.UPR_MUTATION, value, datatype, collectionID))
 }
 
 func (dh *DifferDcpHandler) Deletion(seqno, revId uint64, deleteTime uint32, cas uint64, datatype uint8, vbno uint16, collectionID uint32, streamID uint16, key, value []byte) {
-	dh.writeToDataChan(CreateMutation(vbno, key, seqno, revId, cas, 0, 0, gomemcached.UPR_DELETION, value, datatype, collectionID))
+	dh.writeToDataChan(base.CreateMutation(vbno, key, seqno, revId, cas, 0, 0, gomemcached.UPR_DELETION, value, datatype, collectionID))
 }
 
 func (dh *DifferDcpHandler) Expiration(seqno, revId uint64, deleteTime uint32, cas uint64, vbno uint16, collectionID uint32, streamID uint16, key []byte) {
-	dh.writeToDataChan(CreateMutation(vbno, key, seqno, revId, cas, 0, 0, gomemcached.UPR_EXPIRATION, nil, 0, collectionID))
+	dh.writeToDataChan(base.CreateMutation(vbno, key, seqno, revId, cas, 0, 0, gomemcached.UPR_EXPIRATION, nil, 0, collectionID))
 }
 
 func (dh *DifferDcpHandler) End(vbno uint16, streamID uint16, err error) {
@@ -65,11 +65,11 @@ func (dh *DifferDcpHandler) End(vbno uint16, streamID uint16, err error) {
 }
 
 func (dh *DifferDcpHandler) CreateCollection(seqNo uint64, version uint8, vbID uint16, manifestUID uint64, scopeID uint32, collectionID uint32, ttl uint32, streamID uint16, key []byte) {
-	dh.writeToDataChan(CreateMutation(vbID, key, seqNo, 0, 0, 0, 0, gomemcached.DCP_SYSTEM_EVENT, nil, 0, collectionID))
+	dh.writeToDataChan(base.CreateMutation(vbID, key, seqNo, 0, 0, 0, 0, gomemcached.DCP_SYSTEM_EVENT, nil, 0, collectionID))
 }
 
 func (dh *DifferDcpHandler) DeleteCollection(seqNo uint64, version uint8, vbID uint16, manifestUID uint64, scopeID uint32, collectionID uint32, streamID uint16) {
-	dh.writeToDataChan(CreateMutation(vbID, nil, seqNo, 0, 0, 0, 0, gomemcached.DCP_SYSTEM_EVENT, nil, 0, collectionID))
+	dh.writeToDataChan(base.CreateMutation(vbID, nil, seqNo, 0, 0, 0, 0, gomemcached.DCP_SYSTEM_EVENT, nil, 0, collectionID))
 }
 
 func (dh *DifferDcpHandler) FlushCollection(seqNo uint64, version uint8, vbID uint16, manifestUID uint64, collectionID uint32) {
@@ -78,17 +78,17 @@ func (dh *DifferDcpHandler) FlushCollection(seqNo uint64, version uint8, vbID ui
 
 func (dh *DifferDcpHandler) CreateScope(seqNo uint64, version uint8, vbID uint16, manifestUID uint64, scopeID uint32, streamID uint16, key []byte) {
 	// Overloading collectionID field for scopeID because differ doesn't care
-	dh.writeToDataChan(CreateMutation(vbID, nil, seqNo, 0, 0, 0, 0, gomemcached.DCP_SYSTEM_EVENT, nil, 0, scopeID))
+	dh.writeToDataChan(base.CreateMutation(vbID, nil, seqNo, 0, 0, 0, 0, gomemcached.DCP_SYSTEM_EVENT, nil, 0, scopeID))
 }
 
 func (dh *DifferDcpHandler) DeleteScope(seqNo uint64, version uint8, vbID uint16, manifestUID uint64, scopeID uint32, streamID uint16) {
 	// Overloading collectionID field for scopeID because differ doesn't care
-	dh.writeToDataChan(CreateMutation(vbID, nil, seqNo, 0, 0, 0, 0, gomemcached.DCP_SYSTEM_EVENT, nil, 0, scopeID))
+	dh.writeToDataChan(base.CreateMutation(vbID, nil, seqNo, 0, 0, 0, 0, gomemcached.DCP_SYSTEM_EVENT, nil, 0, scopeID))
 }
 
 func (dh *DifferDcpHandler) ModifyCollection(seqNo uint64, version uint8, vbID uint16, manifestUID uint64, collectionID uint32, ttl uint32, streamID uint16) {
 	// Overloading collectionID field for scopeID because differ doesn't care
-	dh.writeToDataChan(CreateMutation(vbID, nil, seqNo, 0, 0, 0, 0, gomemcached.DCP_SYSTEM_EVENT, nil, 0, collectionID))
+	dh.writeToDataChan(base.CreateMutation(vbID, nil, seqNo, 0, 0, 0, 0, gomemcached.DCP_SYSTEM_EVENT, nil, 0, collectionID))
 }
 
 func (dh *DifferDcpHandler) OSOSnapshot(vbID uint16, snapshotType uint32, streamID uint16) {
@@ -151,7 +151,7 @@ func (dh *DifferDcpHandler) cleanup() {
 	}
 }
 
-func (dh *DifferDcpHandler) processMutation(mut *Mutation) {
+func (dh *DifferDcpHandler) processMutation(mut *base.Mutation) {
 	vbno := mut.Vbno
 	index := utils.GetBucketIndexFromKey(mut.Key, dh.numberOfBins)
 	innerMap := dh.bucketMap[vbno]
