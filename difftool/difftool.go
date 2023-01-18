@@ -19,8 +19,6 @@ import (
 	"github.com/couchbase/goxdcr/log"
 	"github.com/couchbase/goxdcr/metadata"
 	xdcrUtils "github.com/couchbase/goxdcr/utils"
-
-	"github.com/spf13/viper"
 )
 
 type DiffToolStateType int
@@ -45,12 +43,15 @@ type XdcrDiffTool struct {
 	curState DifftoolState
 
 	legacyMode bool
+
+	legacyOptions *base.Options
 }
 
-func NewDiffTool(legacyMode bool) (*XdcrDiffTool, error) {
+func NewDiffTool(legacyMode bool, legacyOptions *base.Options) (*XdcrDiffTool, error) {
 	var err error
 	difftool := &XdcrDiffTool{
-		legacyMode: legacyMode,
+		legacyMode:    legacyMode,
+		legacyOptions: legacyOptions,
 	}
 
 	if !legacyMode {
@@ -90,7 +91,7 @@ func (difftool *XdcrDiffTool) GenerateDataFiles() error {
 	difftool.Logger().Infof("GenerateDataFiles routine started\n")
 	defer difftool.Logger().Infof("GenerateDataFiles routine completed\n")
 
-	if viper.GetUint64(base.CompleteByDurationKey) == 0 && !viper.GetBool(base.CompleteBySeqnoKey) {
+	if difftool.legacyOptions.CompleteByDuration == 0 && !difftool.legacyOptions.CompleteBySeqno {
 		difftool.Logger().Infof("completeByDuration is required when completeBySeqno is false\n")
 		os.Exit(1)
 	}
@@ -99,8 +100,8 @@ func (difftool *XdcrDiffTool) GenerateDataFiles() error {
 	waitGroup := &sync.WaitGroup{}
 
 	var fileDescPool fileDescriptorPool.FdPoolIface
-	if viper.GetInt(base.NumberOfFileDescKey) > 0 {
-		fileDescPool = fileDescriptorPool.NewFileDescriptorPool(viper.GetInt(base.NumberOfFileDescKey))
+	if difftool.legacyOptions.NumberOfFileDesc > 0 {
+		fileDescPool = fileDescriptorPool.NewFileDescriptorPool(int(difftool.legacyOptions.NumberOfFileDesc))
 	}
 
 	if err := difftool.CreateFilter(); err != nil {
@@ -108,48 +109,48 @@ func (difftool *XdcrDiffTool) GenerateDataFiles() error {
 		os.Exit(1)
 	}
 
-	difftool.sourceDcpDriver = startDcpDriver(difftool.Logger(), base.SourceClusterName, viper.GetString(base.SourceUrlKey),
+	difftool.sourceDcpDriver = startDcpDriver(difftool.Logger(), base.SourceClusterName, difftool.legacyOptions.SourceUrl,
 		difftool.SpecifiedSpec.SourceBucketName,
-		difftool.SelfRef, viper.GetString(base.SourceFileDirKey), viper.GetString(base.CheckpointFileDirKey),
-		viper.GetString(base.OldSourceCheckpointFileNameKey), viper.GetString(base.NewCheckpointFileNameKey),
-		viper.GetUint64(base.NumberOfSourceDcpClientsKey),
-		viper.GetUint64(base.NumberOfWorkersPerSourceDcpClientKey), viper.GetUint64(base.NumberOfBinsKey),
-		viper.GetUint64(base.SourceDcpHandlerChanSizeKey),
-		viper.GetUint64(base.BucketOpTimeoutKey), viper.GetUint64(base.MaxNumOfGetStatsRetryKey),
-		viper.GetUint64(base.GetStatsRetryIntervalKey),
-		viper.GetUint64(base.GetStatsMaxBackoffKey), viper.GetUint64(base.CheckpointIntervalKey), errChan, waitGroup,
-		viper.GetBool(base.CompleteBySeqnoKey), fileDescPool, difftool.Filter,
+		difftool.SelfRef, difftool.legacyOptions.SourceFileDir, difftool.legacyOptions.CheckpointFileDir,
+		difftool.legacyOptions.OldSourceCheckpointFileName, difftool.legacyOptions.NewCheckpointFileName,
+		difftool.legacyOptions.NumberOfSourceDcpClients,
+		difftool.legacyOptions.NumberOfWorkersPerSourceDcpClient, difftool.legacyOptions.NumberOfBins,
+		difftool.legacyOptions.SourceDcpHandlerChanSize,
+		difftool.legacyOptions.BucketOpTimeout, difftool.legacyOptions.MaxNumOfGetStatsRetry,
+		difftool.legacyOptions.GetStatsRetryInterval,
+		difftool.legacyOptions.GetStatsMaxBackoff, difftool.legacyOptions.CheckpointInterval, errChan, waitGroup,
+		difftool.legacyOptions.CompleteBySeqno, fileDescPool, difftool.Filter,
 		difftool.SrcCapabilities, difftool.SrcCollectionIds, difftool.ColFilterOrderedKeys, difftool.Utils,
-		viper.GetInt(base.BucketBufferCapacityKey))
+		difftool.legacyOptions.BucketBufferCapacity)
 
-	delayDurationBetweenSourceAndTarget := time.Duration(viper.GetUint64(base.DelayBetweenSourceAndTargetKey)) * time.Second
+	delayDurationBetweenSourceAndTarget := time.Duration(difftool.legacyOptions.DelayBetweenSourceAndTarget) * time.Second
 	difftool.Logger().Infof("Waiting for %v before starting target dcp clients\n", delayDurationBetweenSourceAndTarget)
 	time.Sleep(delayDurationBetweenSourceAndTarget)
 
 	difftool.Logger().Infof("Starting target dcp clients\n")
 	difftool.targetDcpDriver = startDcpDriver(difftool.Logger(), base.TargetClusterName, difftool.SpecifiedRef.HostName_,
 		difftool.SpecifiedSpec.TargetBucketName, difftool.SpecifiedRef,
-		viper.GetString(base.TargetFileDirKey), viper.GetString(base.CheckpointFileDirKey),
-		viper.GetString(base.OldTargetCheckpointFileNameKey), viper.GetString(base.NewCheckpointFileNameKey),
-		viper.GetUint64(base.NumberOfTargetDcpClientsKey), viper.GetUint64(base.NumberOfWorkersPerTargetDcpClientKey),
-		viper.GetUint64(base.NumberOfBinsKey), viper.GetUint64(base.TargetDcpHandlerChanSizeKey),
-		viper.GetUint64(base.BucketOpTimeoutKey), viper.GetUint64(base.MaxNumOfGetStatsRetryKey),
-		viper.GetUint64(base.GetStatsRetryIntervalKey), viper.GetUint64(base.GetStatsMaxBackoffKey),
-		viper.GetUint64(base.CheckpointIntervalKey), errChan, waitGroup,
-		viper.GetBool(base.CompleteBySeqnoKey), fileDescPool, difftool.Filter,
+		difftool.legacyOptions.TargetFileDir, difftool.legacyOptions.CheckpointFileDir,
+		difftool.legacyOptions.OldTargetCheckpointFileName, difftool.legacyOptions.NewCheckpointFileName,
+		difftool.legacyOptions.NumberOfTargetDcpClients, difftool.legacyOptions.NumberOfWorkersPerTargetDcpClient,
+		difftool.legacyOptions.NumberOfBins, difftool.legacyOptions.TargetDcpHandlerChanSize,
+		difftool.legacyOptions.BucketOpTimeout, difftool.legacyOptions.MaxNumOfGetStatsRetry,
+		difftool.legacyOptions.GetStatsRetryInterval, difftool.legacyOptions.GetStatsMaxBackoff,
+		difftool.legacyOptions.CheckpointInterval, errChan, waitGroup,
+		difftool.legacyOptions.CompleteBySeqno, fileDescPool, difftool.Filter,
 		difftool.TgtCapabilities, difftool.TgtCollectionIds, difftool.ColFilterOrderedKeys, difftool.Utils,
-		viper.GetInt(base.BucketBufferCapacityKey))
+		difftool.legacyOptions.BucketBufferCapacity)
 
 	difftool.curState.mtx.Lock()
 	difftool.curState.state = StateDcpStarted
 	difftool.curState.mtx.Unlock()
 
 	var err error
-	if viper.GetBool(base.CompleteBySeqnoKey) {
+	if difftool.legacyOptions.CompleteBySeqno {
 		err = difftool.WaitForCompletion(difftool.sourceDcpDriver, difftool.targetDcpDriver, errChan, waitGroup)
 	} else {
 		err = difftool.WaitForDuration(difftool.sourceDcpDriver, difftool.targetDcpDriver, errChan,
-			viper.GetUint64(base.CompleteByDurationKey), delayDurationBetweenSourceAndTarget)
+			difftool.legacyOptions.CompleteByDuration, delayDurationBetweenSourceAndTarget)
 	}
 
 	return err
@@ -159,19 +160,19 @@ func (difftool *XdcrDiffTool) DiffDataFiles() error {
 	difftool.Logger().Infof("DiffDataFiles routine started\n")
 	defer difftool.Logger().Infof("DiffDataFiles routine completed\n")
 
-	err := os.RemoveAll(viper.GetString(base.FileDifferDirKey))
+	err := os.RemoveAll(difftool.legacyOptions.FileDifferDir)
 	if err != nil {
 		difftool.Logger().Errorf("Error removing fileDifferDir: %v\n", err)
 	}
-	err = os.MkdirAll(viper.GetString(base.FileDifferDirKey), 0777)
+	err = os.MkdirAll(difftool.legacyOptions.FileDifferDir, 0777)
 	if err != nil {
 		return fmt.Errorf("Error mkdir fileDifferDir: %v\n", err)
 	}
 
-	difftoolDriver := differ.NewDifferDriver(viper.GetString(base.SourceFileDirKey),
-		viper.GetString(base.TargetFileDirKey), viper.GetString(base.FileDifferDirKey),
-		base.DiffKeysFileName, viper.GetInt(base.NumberOfWorkersPerSourceDcpClientKey),
-		viper.GetInt(base.NumberOfBinsKey), viper.GetInt(base.NumberOfFileDescKey),
+	difftoolDriver := differ.NewDifferDriver(difftool.legacyOptions.SourceFileDir,
+		difftool.legacyOptions.TargetFileDir, difftool.legacyOptions.FileDifferDir,
+		base.DiffKeysFileName, int(difftool.legacyOptions.NumberOfWorkersPerSourceDcpClient),
+		int(difftool.legacyOptions.NumberOfBins), int(difftool.legacyOptions.NumberOfFileDesc),
 		difftool.SrcToTgtColIdsMap, difftool.ColFilterOrderedKeys, difftool.ColFilterOrderedTargetColId)
 	err = difftoolDriver.Run()
 	if err != nil {
@@ -202,14 +203,14 @@ func (difftool *XdcrDiffTool) DiffDataFiles() error {
 }
 
 func (difftool *XdcrDiffTool) RunMutationDiffer() {
-	difftool.Logger().Infof("RunMutationDiffer started with compareBody=%v\n", viper.GetBool(base.CompareBodyKey))
+	difftool.Logger().Infof("RunMutationDiffer started with compareBody=%v\n", difftool.legacyOptions.CompareBody)
 	defer difftool.Logger().Infof("RunMutationDiffer completed\n")
 
-	err := os.RemoveAll(viper.GetString(base.MutationDifferDirKey))
+	err := os.RemoveAll(difftool.legacyOptions.MutationDifferDir)
 	if err != nil {
 		difftool.Logger().Errorf("Error removing mutationDifferDir: %v\n", err)
 	}
-	err = os.MkdirAll(viper.GetString(base.MutationDifferDirKey), 0777)
+	err = os.MkdirAll(difftool.legacyOptions.MutationDifferDir, 0777)
 	if err != nil {
 		err = fmt.Errorf("Error mkdir mutationDifferDir: %v\n", err)
 		return
@@ -217,14 +218,14 @@ func (difftool *XdcrDiffTool) RunMutationDiffer() {
 
 	mutationDiffer := differ.NewMutationDiffer(difftool.SpecifiedSpec.SourceBucketName,
 		difftool.SelfRef, difftool.SpecifiedSpec.TargetBucketName, difftool.SpecifiedRef,
-		viper.GetString(base.FileDifferDirKey), viper.GetString(base.MutationDifferDirKey),
-		int(viper.GetUint64(base.NumberOfWorkersForMutationDifferKey)),
-		int(viper.GetUint64(base.MutationDifferBatchSizeKey)), int(viper.GetUint64(base.MutationDifferTimeoutKey)),
-		int(viper.GetUint64(base.MaxNumOfSendBatchRetryKey)),
-		time.Duration(viper.GetUint64(base.SendBatchRetryIntervalKey))*time.Millisecond,
-		time.Duration(viper.GetUint64(base.SendBatchMaxBackoffKey))*time.Second, viper.GetBool(base.CompareBodyKey),
+		difftool.legacyOptions.FileDifferDir, difftool.legacyOptions.MutationDifferDir,
+		int(difftool.legacyOptions.NumberOfWorkersForMutationDiffer),
+		int(difftool.legacyOptions.MutationDifferBatchSize), int(difftool.legacyOptions.MutationDifferTimeout),
+		int(difftool.legacyOptions.MaxNumOfSendBatchRetry),
+		time.Duration(difftool.legacyOptions.SendBatchRetryInterval)*time.Millisecond,
+		time.Duration(difftool.legacyOptions.SendBatchRetryInterval)*time.Second, difftool.legacyOptions.CompareBody,
 		difftool.Logger(), difftool.SrcToTgtColIdsMap, difftool.SrcCapabilities, difftool.TgtCapabilities, difftool.Utils,
-		viper.GetInt(base.MutationRetriesKey), viper.GetInt(base.MutationRetriesWaitSecsKey))
+		difftool.legacyOptions.MutationDifferRetries, difftool.legacyOptions.MutationDifferRetriesWaitSecs)
 	err = mutationDiffer.Run()
 	if err != nil {
 		difftool.Logger().Errorf("Error from RunMutationDiffer = %v\n", err)
@@ -303,14 +304,14 @@ func (difftool *XdcrDiffTool) WaitForDuration(sourceDcpDriver, targetDcpDriver *
 
 func (difftool *XdcrDiffTool) PopulateTemporarySpecAndRef() error {
 	var err error
-	difftool.SpecifiedSpec, err = metadata.NewReplicationSpecification(viper.GetString(base.SourceBucketNameKey),
-		"" /*sourceBucketUUID*/, "" /*targetClusterUUID*/, viper.GetString(base.TargetBucketNameKey), "" /*targetBucketUUID*/)
+	difftool.SpecifiedSpec, err = metadata.NewReplicationSpecification(difftool.legacyOptions.SourceBucketName,
+		"" /*sourceBucketUUID*/, "" /*targetClusterUUID*/, difftool.legacyOptions.TargetBucketName, "" /*targetBucketUUID*/)
 	if err != nil {
 		return fmt.Errorf("PopulateTemporarySpecAndRef() - %v", err)
 	}
 
-	difftool.SpecifiedRef, err = metadata.NewRemoteClusterReference("" /*uuid*/, viper.GetString(base.RemoteClusterNameKey), /*name*/
-		viper.GetString(base.TargetUrlKey), viper.GetString(base.TargetUsernameKey), viper.GetString(base.TargetPasswordKey),
+	difftool.SpecifiedRef, err = metadata.NewRemoteClusterReference("" /*uuid*/, difftool.legacyOptions.RemoteClusterName, /*name*/
+		difftool.legacyOptions.TargetUrl, difftool.legacyOptions.TargetUsername, difftool.legacyOptions.TargetPassword,
 		"", false, "", nil, nil, nil, nil)
 	if err != nil {
 		return fmt.Errorf("PopulateTemporarySpecAndRef() - %v", err)
@@ -346,15 +347,15 @@ func (difftool *XdcrDiffTool) MonitorInterruptSignal() {
 }
 
 func (difftool *XdcrDiffTool) SetupDirectories() error {
-	err := os.MkdirAll(viper.GetString(base.SourceFileDirKey), 0777)
+	err := os.MkdirAll(difftool.legacyOptions.SourceFileDir, 0777)
 	if err != nil {
 		fmt.Printf("Error mkdir sourceFileDir: %v\n", err)
 	}
-	err = os.MkdirAll(viper.GetString(base.TargetFileDirKey), 0777)
+	err = os.MkdirAll(difftool.legacyOptions.TargetFileDir, 0777)
 	if err != nil {
 		fmt.Printf("Error mkdir targetFileDir: %v\n", err)
 	}
-	err = os.MkdirAll(viper.GetString(base.CheckpointFileDirKey), 0777)
+	err = os.MkdirAll(difftool.legacyOptions.CheckpointFileDir, 0777)
 	if err != nil {
 		// it is ok for checkpoint dir to be existing, since we do not clean it up
 		fmt.Printf("Error mkdir checkpointFileDir: %v\n", err)
