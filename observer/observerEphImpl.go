@@ -144,4 +144,5 @@ func (i *internalHandler) HandleMutation(mut *base.Mutation) {
 		return
 	}
 
+	i.o.observeKeysMap.RecordMutation(mut, i.isSource)
 }

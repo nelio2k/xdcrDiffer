@@ -16,8 +16,12 @@ type KeysHistoryEphemeral struct {
 	// TODO - add more history as part of listener
 }
 
-func NewKeysHistory() KeysHistoryEphemeral {
-	return KeysHistoryEphemeral{}
+func NewKeysHistory() *KeysHistoryEphemeral {
+	return &KeysHistoryEphemeral{}
+}
+
+func (k *KeysHistoryEphemeral) MarkMutation(mut *base.Mutation) {
+
 }
 
 type KeysLookupMap map[string]History
@@ -33,7 +37,7 @@ func (k *KeysLookupMap) AddNewKey(key string) error {
 
 func (k *KeysLookupMap) Get(key string) (History, error) {
 	if history, ok := (*k)[key]; !ok {
-		return KeysHistoryEphemeral{}, base.ErrorKeyDoesNotExist
+		return nil, base.ErrorKeyDoesNotExist
 	} else {
 		return history, nil
 	}
@@ -107,10 +111,7 @@ func (m *ObserveKeysMap) Add(ns *xdcrBase.CollectionNamespace, key string) error
 }
 
 func (m *ObserveKeysMap) MutationIsObserved(mut *base.Mutation, isSource bool) bool {
-	mapToCheck := m.srcKeysMap
-	if !isSource {
-		mapToCheck = m.tgtKeysMap
-	}
+	mapToCheck := m.getSourceOrTargetMap(isSource)
 	m.mtx.RLock()
 	defer m.mtx.RUnlock()
 
@@ -121,7 +122,32 @@ func (m *ObserveKeysMap) MutationIsObserved(mut *base.Mutation, isSource bool) b
 		_, getErr := lookupMap.Get(string(mut.Key))
 		return getErr == nil
 	}
+}
 
+func (m *ObserveKeysMap) getSourceOrTargetMap(isSource bool) map[uint32]KeysLookupMap {
+	mapToCheck := m.srcKeysMap
+	if !isSource {
+		mapToCheck = m.tgtKeysMap
+	}
+	return mapToCheck
+}
+
+// MutationIsObserved should be called first
+func (m *ObserveKeysMap) RecordMutation(mut *base.Mutation, isSource bool) {
+	mapToCheck := m.getSourceOrTargetMap(isSource)
+
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+	keysMap, ok := mapToCheck[mut.ColId]
+	if !ok {
+		panic(fmt.Sprintf("Mutation for %v not observed", mut.ColId))
+	}
+
+	history, err := keysMap.Get(string(mut.Key))
+	if err != nil {
+		panic(fmt.Sprintf("Mutation %v not observed", string(mut.Key)))
+	}
+	history.MarkMutation(mut)
 }
 
 func NewObserveKeysMap(logger *log.CommonLogger, srcToTgtColIds map[uint32][]uint32) (*ObserveKeysMap, error) {
