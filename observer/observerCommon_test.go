@@ -121,10 +121,10 @@ func TestObserveKeysMap_MutationIsObserved1(t *testing.T) {
 			want: true,
 			fields: fields{
 				srcKeysMap: map[uint32]KeysLookupMap{
-					0: {"a": KeysHistoryEphemeral{}},
+					0: {"a": &KeysHistoryEphemeral{}},
 				},
 				tgtKeysMap: map[uint32]KeysLookupMap{
-					0: {"a": KeysHistoryEphemeral{}},
+					0: {"a": &KeysHistoryEphemeral{}},
 				},
 				srcNamespaceMap: nil,
 				tgtNamespaceMap: nil,
@@ -156,10 +156,10 @@ func TestObserveKeysMap_MutationIsObserved1(t *testing.T) {
 			want: true,
 			fields: fields{
 				srcKeysMap: map[uint32]KeysLookupMap{
-					0: {"a": KeysHistoryEphemeral{}},
+					0: {"a": &KeysHistoryEphemeral{}},
 				},
 				tgtKeysMap: map[uint32]KeysLookupMap{
-					0: {"a": KeysHistoryEphemeral{}},
+					0: {"a": &KeysHistoryEphemeral{}},
 				},
 				srcNamespaceMap: nil,
 				tgtNamespaceMap: nil,
@@ -191,10 +191,10 @@ func TestObserveKeysMap_MutationIsObserved1(t *testing.T) {
 			want: false,
 			fields: fields{
 				srcKeysMap: map[uint32]KeysLookupMap{
-					0: {"a": KeysHistoryEphemeral{}},
+					0: {"a": &KeysHistoryEphemeral{}},
 				},
 				tgtKeysMap: map[uint32]KeysLookupMap{
-					0: {"a": KeysHistoryEphemeral{}},
+					0: {"a": &KeysHistoryEphemeral{}},
 				},
 				srcNamespaceMap: nil,
 				tgtNamespaceMap: nil,

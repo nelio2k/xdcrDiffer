@@ -112,8 +112,11 @@ func TestObserverEphImpl_TranslateObserverKeysList(t *testing.T) {
 				observeKeysMap: newObserveKeysMapWrapper(nil, nil),
 				observeKeysGetter: func() map[string]interface{} {
 					return map[string]interface{}{
-						"_default": map[string][]string{
-							"_default": []string{"a", "b"},
+						"_default": map[string]interface{}{
+							"_default": []interface{}{
+								"a",
+								"b",
+							},
 						},
 					}
 				},
@@ -132,8 +135,8 @@ func TestObserverEphImpl_TranslateObserverKeysList(t *testing.T) {
 				observeKeysMap: newObserveKeysMapWrapper(nil, nil),
 				observeKeysGetter: func() map[string]interface{} {
 					return map[string]interface{}{
-						"_default": map[string][]string{
-							"nonDefault": []string{"a", "b"},
+						"_default": map[string]interface{}{
+							"nonDefault": []interface{}{"a", "b"},
 						},
 					}
 				},
@@ -146,8 +149,8 @@ func TestObserverEphImpl_TranslateObserverKeysList(t *testing.T) {
 				observeKeysMap: newObserveKeysMapWrapper(nil, nil),
 				observeKeysGetter: func() map[string]interface{} {
 					return map[string]interface{}{
-						"_default": map[string][]string{
-							"nonDefault": []string{"a", "b"},
+						"_default": map[string]interface{}{
+							"nonDefault": []interface{}{"a", "b"},
 						},
 					}
 				},

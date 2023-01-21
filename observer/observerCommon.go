@@ -14,6 +14,10 @@ import (
 // It stores the information in memory only
 type KeysHistoryEphemeral struct {
 	// TODO - add more history as part of listener
+
+	// Test: Just have a list of mutations recorded
+	mutationListMtx sync.Mutex
+	mutationList    []*base.Mutation
 }
 
 func NewKeysHistory() *KeysHistoryEphemeral {
@@ -21,7 +25,10 @@ func NewKeysHistory() *KeysHistoryEphemeral {
 }
 
 func (k *KeysHistoryEphemeral) MarkMutation(mut *base.Mutation) {
+	k.mutationListMtx.Lock()
+	defer k.mutationListMtx.Unlock()
 
+	k.mutationList = append(k.mutationList, mut)
 }
 
 type KeysLookupMap map[string]History
@@ -220,16 +227,17 @@ func (o *ObserveCommon) TranslateObserverKeysList() error {
 		return err
 	}
 
-	_, ok := scopesCollectionMap[xdcrBase.DefaultScopeCollectionName].(map[string][]string)
+	_, ok := scopesCollectionMap[xdcrBase.DefaultScopeCollectionName].(map[string]interface{})
 	// Only default scope exists
 	if len(scopesCollectionMap) == 1 && ok {
-		collectionsKeysMap := scopesCollectionMap[xdcrBase.DefaultScopeCollectionName].(map[string][]string)
+		collectionsKeysMap := scopesCollectionMap[xdcrBase.DefaultScopeCollectionName].(map[string]interface{})
 		if len(collectionsKeysMap) == 0 || collectionsKeysMap == nil {
 			return base.ErrorInvalidObserveKeysFormat
 		}
 		// Only default collection exists within a single default scope
 		if len(collectionsKeysMap) == 1 && collectionsKeysMap[xdcrBase.DefaultScopeCollectionName] != nil {
-			keysList := collectionsKeysMap[xdcrBase.DefaultScopeCollectionName]
+			keysListRaw := collectionsKeysMap[xdcrBase.DefaultScopeCollectionName]
+			keysList := keysListRaw.([]interface{})
 			if len(keysList) == 0 {
 				return base.ErrorNoKeySpecified
 			}
@@ -240,7 +248,8 @@ func (o *ObserveCommon) TranslateObserverKeysList() error {
 				Target: &defaultManifest,
 			})
 			collectionNs := &xdcrBase.DefaultCollectionNamespace
-			for _, key := range keysList {
+			for _, keyRaw := range keysList {
+				key := keyRaw.(string)
 				if err := o.observeKeysMap.Add(collectionNs, key); err != nil {
 					return fmt.Errorf("Adding key %v to %v resulted in %v", key, collectionNs.ToIndexString(), err)
 				}
@@ -255,12 +264,14 @@ func (o *ObserveCommon) TranslateObserverKeysList() error {
 	}
 
 	for scopeName, collectionsMapRaw := range scopesCollectionMap {
-		for collectionName, keys := range collectionsMapRaw.(map[string][]string) {
+		for collectionName, rawList := range collectionsMapRaw.(map[string]interface{}) {
+			keys := rawList.([]interface{})
 			ns := &xdcrBase.CollectionNamespace{
 				ScopeName:      scopeName,
 				CollectionName: collectionName,
 			}
-			for _, key := range keys {
+			for _, keyRaw := range keys {
+				key := keyRaw.(string)
 				if err := o.observeKeysMap.Add(ns, key); err != nil {
 					return base.ErrorScopeCollectionNotFoundInManifest
 				}
@@ -282,7 +293,7 @@ func (o *ObserveCommon) checkFormat(scopesCollectionsMap map[string]interface{})
 			o.logger.Errorf("Scope %s contains nil value", k)
 			return base.ErrorInvalidObserveKeysFormat
 		}
-		collectionsKeysMap, ok := v.(map[string][]string)
+		collectionsKeysMap, ok := v.(map[string]interface{})
 		if !ok {
 			o.logger.Errorf("Scope %s contains invalid type: %v", k, reflect.TypeOf(v))
 			return base.ErrorInvalidObserveKeysFormat
@@ -291,12 +302,23 @@ func (o *ObserveCommon) checkFormat(scopesCollectionsMap map[string]interface{})
 			o.logger.Errorf("Scope %s does not contain any valid value listing collection names and keys", k)
 			return base.ErrorInvalidObserveKeysFormat
 		}
-		for col, keysList := range collectionsKeysMap {
+		for col, keysListRaw := range collectionsKeysMap {
+			keysList, ok := keysListRaw.([]interface{})
+			if !ok {
+				o.logger.Errorf("Scope %v Collection %s contains invalid type: %v", k, col, reflect.TypeOf(keysListRaw))
+				return base.ErrorInvalidObserveKeysFormat
+			}
 			if len(keysList) == 0 {
 				o.logger.Errorf("Scope %v collection %v contains no keys", k, col)
 				return base.ErrorInvalidObserveKeysFormat
 			}
-			for _, key := range keysList {
+			for i, keyRaw := range keysList {
+				key, ok := keyRaw.(string)
+				if !ok {
+					o.logger.Errorf("Scope %v Collection %s key in list position %v contains invalid type: %v",
+						k, col, i, reflect.TypeOf(keyRaw))
+					return base.ErrorInvalidObserveKeysFormat
+				}
 				if key == "" {
 					o.logger.Errorf("Scope %v collection %v contains an empty key", k, col)
 					return base.ErrorInvalidObserveKeysFormat

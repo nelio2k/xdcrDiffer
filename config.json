@@ -1,12 +1,14 @@
 {
-  "sourceUrl": null,
-  "sourceBucketName": null,
-  "remoteClusterName": null,
-  "targetBucketName": null,
-  "observeMode": false,
+  "sourceUrl": "127.0.0.1:9000",
+  "sourceBucketName": "B1",
+  "remoteClusterName": "C2",
+  "targetBucketName": "B2",
+  "observeMode": true,
   "observeKeys": {
     "_default": {
-      "_default": []
+      "_default": [
+         "xdcrProv_C1_col_0"
+	]
     }
   }
 }
