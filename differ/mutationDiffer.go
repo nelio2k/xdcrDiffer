@@ -1093,8 +1093,8 @@ func (d *MutationDiffer) openBucket(bucketName string, reference *metadata.Remot
 	useSecurePrefix := reference.HttpAuthMech() == xdcrBase.HttpAuthMechHttps
 
 	if !source && len(reference.ClientKey()) > 0 && len(reference.ClientCertificate()) > 0 {
-		// Try out RSA private key first
-		privateKey, err := x509.ParsePKCS1PrivateKey(reference.ClientKey())
+		// Official couchbase documentation generting cert will generate this "type" of private key
+		privateKey, err := x509.ParsePKCS8PrivateKey(reference.ClientKey())
 		if err != nil {
 			return fmt.Errorf("error parsing privatekey %v", err)
 		}

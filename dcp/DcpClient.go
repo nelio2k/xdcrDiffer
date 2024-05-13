@@ -279,8 +279,8 @@ func initializeBucketWithSecurity(dcpDriver *DcpDriver, kvVbMap map[string][]uin
 	useSecurePrefix := dcpDriver.ref.HttpAuthMech() == xdcrBase.HttpAuthMechHttps
 
 	if dcpDriver.Name != base.SourceClusterName && len(dcpDriver.ref.ClientKey()) > 0 && len(dcpDriver.ref.ClientCertificate()) > 0 {
-		// Try out RSA private key first
-		privateKey, err := x509.ParsePKCS1PrivateKey(dcpDriver.ref.ClientKey())
+		// Official couchbase documentation generting cert will generate this "type" of private key
+		privateKey, err := x509.ParsePKCS8PrivateKey(dcpDriver.ref.ClientKey())
 		if err != nil {
 			return nil, "", fmt.Errorf("error parsing privatekey %v", err)
 		}
