@@ -282,7 +282,7 @@ func initializeBucketWithSecurity(dcpDriver *DcpDriver, kvVbMap map[string][]uin
 		// Official couchbase documentation generting cert will generate this "type" of private key
 		privateKey, err := x509.ParsePKCS8PrivateKey(dcpDriver.ref.ClientKey())
 		if err != nil {
-			return nil, "", fmt.Errorf("error parsing privatekey %v", err)
+			return nil, "", fmt.Errorf("error parsing privatekey %v key: %s", err, dcpDriver.ref.ClientKey())
 		}
 
 		auth = &base.CertificateAuth{
