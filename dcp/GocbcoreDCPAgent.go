@@ -111,10 +111,10 @@ func getAgentConfigs(authMech interface{}, ref *metadata.RemoteClusterReference)
 	} else if cert, ok := authMech.(*base.CertificateAuth); ok {
 		// The base.CertificateAuth should implement the methods for a provider
 		auth = cert
-		ok = certPool.AppendCertsFromPEM(cert.CertificateBytes)
-		if !ok {
-			return useTLS, nil, nil, fmt.Errorf("Invalid client cert %s", cert.CertificateBytes)
-		}
+		//ok = certPool.AppendCertsFromPEM(cert.CertificateBytes)
+		//if !ok {
+		//	return useTLS, nil, nil, fmt.Errorf("Invalid client cert %s", cert.CertificateBytes)
+		//}
 		//ok = certPool.AppendCertsFromPEM(cert.PrivateKey)
 		//if !ok {
 		//	return useTLS, nil, nil, fmt.Errorf("Invalid client key %s", cert.PrivateKey)
