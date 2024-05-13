@@ -10,7 +10,6 @@
 package differ
 
 import (
-	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	gocbcore "github.com/couchbase/gocbcore/v9"
@@ -18,6 +17,7 @@ import (
 	xdcrLog "github.com/couchbase/goxdcr/log"
 	"github.com/couchbase/goxdcr/metadata"
 	xdcrUtils "github.com/couchbase/goxdcr/utils"
+	"golang.org/x/crypto/ssh"
 	"io/ioutil"
 	"math"
 	"os"
@@ -1094,7 +1094,8 @@ func (d *MutationDiffer) openBucket(bucketName string, reference *metadata.Remot
 
 	if !source && len(reference.ClientKey()) > 0 && len(reference.ClientCertificate()) > 0 {
 		// Official couchbase documentation generting cert will generate this "type" of private key
-		privateKey, err := x509.ParsePKCS8PrivateKey(reference.ClientKey())
+		privateKey, err := ssh.ParseRawPrivateKey(reference.ClientKey())
+		//privateKey, err := x509.ParsePKCS8PrivateKey(reference.ClientKey())
 		if err != nil {
 			return fmt.Errorf("error parsing privatekey %v key: %s", err, reference.ClientKey())
 		}
