@@ -66,10 +66,10 @@ func (a *GocbcoreAgent) setupAgentConfig(authIn interface{}, capability metadata
 		if !ok {
 			return nil, fmt.Errorf("setupAgent invalid clientCert %s", certAuth.CertificateBytes)
 		}
-		ok = certPool.AppendCertsFromPEM(certAuth.PrivateKey)
-		if !ok {
-			return nil, fmt.Errorf("setupAgent invalid clientKey %s", certAuth.PrivateKey)
-		}
+		//ok = certPool.AppendCertsFromPEM(certAuth.PrivateKey)
+		//if !ok {
+		//	return nil, fmt.Errorf("setupAgent invalid clientKey %s", certAuth.PrivateKey)
+		//}
 	} else {
 		panic(fmt.Sprintf("Unknown type: %v\n", reflect.TypeOf(authIn)))
 	}

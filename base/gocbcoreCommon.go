@@ -1,6 +1,7 @@
 package base
 
 import (
+	"crypto"
 	"crypto/tls"
 	"fmt"
 	"github.com/couchbase/gocbcore/v9"
@@ -25,7 +26,7 @@ type PasswordAuth struct {
 type CertificateAuth struct {
 	PasswordAuth
 	CertificateBytes []byte
-	PrivateKey       []byte
+	PrivateKey       crypto.PrivateKey
 }
 
 func (c *CertificateAuth) SupportsTLS() bool {

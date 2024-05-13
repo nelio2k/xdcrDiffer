@@ -11,6 +11,7 @@ package dcp
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"math"
 	"strings"
@@ -278,11 +279,17 @@ func initializeBucketWithSecurity(dcpDriver *DcpDriver, kvVbMap map[string][]uin
 	useSecurePrefix := dcpDriver.ref.HttpAuthMech() == xdcrBase.HttpAuthMechHttps
 
 	if dcpDriver.Name != base.SourceClusterName && len(dcpDriver.ref.ClientKey()) > 0 && len(dcpDriver.ref.ClientCertificate()) > 0 {
+		// Try out RSA private key first
+		privateKey, err := x509.ParsePKCS1PrivateKey(dcpDriver.ref.ClientKey())
+		if err != nil {
+			return nil, "", fmt.Errorf("error parsing privatekey %v", err)
+		}
+
 		auth = &base.CertificateAuth{
 			// For client cert auth, no pw or username given
 			PasswordAuth:     base.PasswordAuth{},
 			CertificateBytes: dcpDriver.ref.ClientCertificate(),
-			PrivateKey:       dcpDriver.ref.ClientKey(),
+			PrivateKey:       privateKey,
 		}
 	} else {
 		auth = &pwAuth
