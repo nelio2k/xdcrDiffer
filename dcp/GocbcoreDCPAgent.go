@@ -115,10 +115,10 @@ func getAgentConfigs(authMech interface{}, ref *metadata.RemoteClusterReference)
 		if !ok {
 			return useTLS, nil, nil, fmt.Errorf("Invalid client cert %s", cert.CertificateBytes)
 		}
-		ok = certPool.AppendCertsFromPEM(cert.PrivateKey)
-		if !ok {
-			return useTLS, nil, nil, fmt.Errorf("Invalid client key %s", cert.PrivateKey)
-		}
+		//ok = certPool.AppendCertsFromPEM(cert.PrivateKey)
+		//if !ok {
+		//	return useTLS, nil, nil, fmt.Errorf("Invalid client key %s", cert.PrivateKey)
+		//}
 	} else {
 		panic(fmt.Sprintf("unknown authmech: %v", reflect.TypeOf(authMech)))
 	}
