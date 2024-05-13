@@ -62,10 +62,10 @@ func (a *GocbcoreAgent) setupAgentConfig(authIn interface{}, capability metadata
 	} else if certAuth, ok := authIn.(*base.CertificateAuth); ok {
 		useTLS = true
 		auth = certAuth
-		//ok = certPool.AppendCertsFromPEM(certAuth.CertificateBytes)
-		//if !ok {
-		//	return nil, fmt.Errorf("setupAgent invalid clientCert %s", certAuth.CertificateBytes)
-		//}
+		ok = certPool.AppendCertsFromPEM(certAuth.CertificateBytes)
+		if !ok {
+			return nil, fmt.Errorf("setupAgent invalid clientCert %s", certAuth.CertificateBytes)
+		}
 		//ok = certPool.AppendCertsFromPEM(certAuth.PrivateKey)
 		//if !ok {
 		//	return nil, fmt.Errorf("setupAgent invalid clientKey %s", certAuth.PrivateKey)

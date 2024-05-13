@@ -12,7 +12,6 @@ package dcp
 import (
 	"crypto/tls"
 	"fmt"
-	"golang.org/x/crypto/ssh"
 	"math"
 	"strings"
 	"sync"
@@ -281,16 +280,17 @@ func initializeBucketWithSecurity(dcpDriver *DcpDriver, kvVbMap map[string][]uin
 	if dcpDriver.Name != base.SourceClusterName && len(dcpDriver.ref.ClientKey()) > 0 && len(dcpDriver.ref.ClientCertificate()) > 0 {
 		// Official couchbase documentation generting cert will generate this "type" of private key
 		//privateKey, err := x509.ParsePKCS8PrivateKey(dcpDriver.ref.ClientKey())
-		privateKey, err := ssh.ParseRawPrivateKey(dcpDriver.ref.ClientKey())
-		if err != nil {
-			return nil, "", fmt.Errorf("error parsing privatekey %v key: %s", err, dcpDriver.ref.ClientKey())
-		}
+
+		//privateKey, err := ssh.ParseRawPrivateKey(dcpDriver.ref.ClientKey())
+		//if err != nil {
+		//	return nil, "", fmt.Errorf("error parsing privatekey %v key: %s", err, dcpDriver.ref.ClientKey())
+		//}
 
 		auth = &base.CertificateAuth{
 			// For client cert auth, no pw or username given
 			PasswordAuth:     base.PasswordAuth{},
 			CertificateBytes: dcpDriver.ref.ClientCertificate(),
-			PrivateKey:       privateKey,
+			PrivateKey:       dcpDriver.ref.ClientKey(),
 		}
 	} else {
 		auth = &pwAuth
