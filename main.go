@@ -404,6 +404,7 @@ func NewDiffTool(legacyMode bool) (*xdcrDiffTool, error) {
 		uiLogSvcMock := &service_def_mock.UILogSvc{}
 		uiLogSvcMock.On("Write", mock.Anything).Run(func(args mock.Arguments) { fmt.Printf("%v", args.Get(0).(string)) }).Return(nil)
 		xdcrTopologyMock := &service_def_mock.XDCRCompTopologySvc{}
+		xdcrTopologyMock.On("MyClusterUUID").Return("fakeUuid", nil)
 		xdcrTopologyMockSetupCb := func() {
 			setupXdcrToplogyMock(xdcrTopologyMock, difftool)
 		}
