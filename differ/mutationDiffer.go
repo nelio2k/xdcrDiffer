@@ -10,13 +10,13 @@
 package differ
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"math"
 	"os"
 	"reflect"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1030,6 +1030,8 @@ func NewDocMeta(result *GetResult) *xdcrBase.DocumentMetadata {
 
 }
 
+var printOnce sync.Once
+
 func areGetResultsTheSame(result1, result2 *GetResult, sourceUUID, targetUUID hlv.DocumentSourceId, includeBody bool) (bool, error) {
 	if result1.GetMetaResult == nil && result2.GetMetaResult == nil {
 		return true, nil
@@ -1061,6 +1063,7 @@ func areGetResultsTheSame(result1, result2 *GetResult, sourceUUID, targetUUID hl
 
 		sourceCrMeta.SetDocumentMetadata(NewDocMeta(result1))
 		sourceCrMeta.SetImportCas(result1.importCas)
+		importCas1ToPrint := result1.importCas
 		if result1.hlvBytes != nil && len(result1.hlvBytes) != 0 {
 			err := UpdateCrMeta(sourceCrMeta, sourceUUID, result1.hlvBytes, result1.pRev)
 			if err != nil {
@@ -1070,8 +1073,10 @@ func areGetResultsTheSame(result1, result2 *GetResult, sourceUUID, targetUUID hl
 
 		targetCrMeta.SetDocumentMetadata(NewDocMeta(result2))
 		targetCrMeta.SetImportCas(result2.importCas)
+		importCas2ToPrint := result2.importCas
 		if result2.hlvBytes != nil && len(result2.hlvBytes) != 0 {
 			err := UpdateCrMeta(targetCrMeta, targetUUID, result2.hlvBytes, result2.pRev)
+
 			if err != nil {
 				return false, fmt.Errorf("cannot compare metadata for document with key %v due to HLV parsing error either at target. TargetErr: %v ", result2.key, err)
 			}
@@ -1086,6 +1091,19 @@ func areGetResultsTheSame(result1, result2 *GetResult, sourceUUID, targetUUID hl
 			return false, nil
 		}
 		metaSame, err1 := sourceCrMeta.Diff(targetCrMeta, xdcrBase.GetHLVPruneFunction(uint64(result1.Cas), sourcePruningWindow.get()), xdcrBase.GetHLVPruneFunction(uint64(result2.Cas), targetPruningWindow.get()))
+		printOnce.Do(
+			func() {
+				fmt.Printf("NEIL DEBUG result1: %v\n", NewDocMeta(result1))
+				fmt.Printf("NEIL DEBUG result2: %v\n", NewDocMeta(result2))
+				fmt.Printf("NEIL DEBUG source importCas %v, targetImportCas %v metaSame %v\n", importCas1ToPrint, importCas2ToPrint, metaSame)
+				fmt.Printf("NEIL DEBUG sourceUUID %v, targetUUID %v\n", sourceUUID, targetUUID)
+
+				fmt.Printf("NEIL DEBUG sourceHLV\n%v\n", sourceCrMeta.GetHLV().String())
+				fmt.Printf("NEIL DEBUG targetHLV\n%v\n", targetCrMeta.GetHLV().String())
+				//fmt.Printf("NEIL DEBUG sourceHlvBytes\n%v\n", hex.Dump(result1.hlvBytes))
+				//fmt.Printf("NEIL DEBUG targetHlvBytes\n%v\n", hex.Dump(result2.hlvBytes))
+				fmt.Printf("NEIL DEBUG source CAS %v, target CAS %v\n", result1.Cas, result2.Cas)
+			})
 		if err1 != nil {
 			if sourceCrMeta.GetHLV() == nil && targetCrMeta.GetHLV() == nil { // if both the HLVs are nil return true
 				// If crMeta reports an error the metaSame will be set to false, so reset it to true since the HLVs are absent
@@ -1102,37 +1120,47 @@ func areGetResultsTheSame(result1, result2 *GetResult, sourceUUID, targetUUID hl
 	}
 }
 
+var dumpOnce sync.Once
+
 func getHlvImportCas(bucketUUID string, result *gocbcore.LookupInResult) (hlvBytes []byte, importCas uint64, pRev uint64, err error) {
 	if result == nil {
 		return
 	}
-	var importCasBytes []byte
-	var pRevBytes []byte
+	var mouBytes []byte
+	//var importCasBytes []byte
+	//var pRevBytes []byte
 	if result.Ops[0].Err == nil {
 		hlvBytes = result.Ops[0].Value
 	}
 	if result.Ops[1].Err == nil {
-		importCasBytes = result.Ops[1].Value
+		mouBytes = result.Ops[1].Value
 	}
-	if result.Ops[2].Err == nil {
-		pRevBytes = result.Ops[2].Value
+	//if result.Ops[2].Err == nil {
+	//	pRevBytes = result.Ops[2].Value
+	//}
+	//importLen := len(importCasBytes)
+	//pRevLen := len(pRevBytes)
+	if len(mouBytes) > 0 {
+		_, _, importCas, pRev, err = xdcrCrMeta.GetImportCasAndPrevFromMou(mouBytes)
+		dumpOnce.Do(func() {
+			fmt.Printf("NEIL DEBUG mouBytes\n%v\n", hex.Dump(mouBytes))
+			fmt.Printf("NEIL DEBUG importCas %v, pRev %v, err %v\n", importCas, pRev, err)
+		})
 	}
-	importLen := len(importCasBytes)
-	pRevLen := len(pRevBytes)
-	if importCasBytes != nil && importLen != 0 {
-		// Remove the start/end quotes before converting it to uint64
-		importCas, err = xdcrBase.HexLittleEndianToUint64(importCasBytes[1 : importLen-1])
-		if err != nil {
-			return
-		}
-	}
-	if pRevBytes != nil && pRevLen != 0 {
-		// Remove the start/end quotes before converting it to uint64
-		pRev, err = strconv.ParseUint(string(pRevBytes[1:pRevLen-1]), 10, 64)
-		if err != nil {
-			return
-		}
-	}
+	//if importCasBytes != nil && importLen != 0 {
+	//	// Remove the start/end quotes before converting it to uint64
+	//	importCas, err = xdcrBase.HexLittleEndianToUint64(importCasBytes[1 : importLen-1])
+	//	if err != nil {
+	//		return
+	//	}
+	//}
+	//if pRevBytes != nil && pRevLen != 0 {
+	//	Remove the start/end quotes before converting it to uint64
+	//pRev, err = strconv.ParseUint(string(pRevBytes[1:pRevLen-1]), 10, 64)
+	//if err != nil {
+	//	return
+	//}
+	//}
 	return
 }
 
